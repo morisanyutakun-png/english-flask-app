@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>英作文トレーニング</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=7">
+  <style>
+    body {
+      font-family:"Hiragino Sans","Noto Sans JP",sans-serif;
+      background: linear-gradient(135deg, #f8fafc, #eef2ff);
+      margin:0; padding:0; color:#333;
+    }
+    .container {
+      max-width:650px;
+      margin:50px auto;
+      text-align:center;
+      background:white;
+      border-radius:20px;
+      box-shadow:0 10px 25px rgba(0,0,0,0.1);
+      padding:30px 20px;
+      position:relative;
+    }
+    h1.main-title { font-size:2rem; margin-bottom:10px; color:#4f46e5; font-weight:700; }
+    .quiz-card {
+      padding:25px 20px;
+      border-radius:16px;
+      margin:25px auto;
+      background:#f3f4f6;
+      box-shadow:0 5px 15px rgba(0,0,0,0.05);
+      color:#111;
+    }
+    textarea {
+      width:100%; padding:10px; border-radius:10px; border:1px solid #ccc;
+      font-size:16px; margin-bottom:10px; box-sizing:border-box; color:#111; background:#fff;
+    }
+    button {
+      margin:10px; padding:10px 14px; font-size:1rem; border-radius:8px;
+      cursor:pointer; transition:0.2s;
+    }
+    button.primary-btn { background: linear-gradient(45deg,#4f46e5,#7c3aed); color:white; border:none; }
+    button.primary-btn:hover { background: linear-gradient(45deg,#7c3aed,#4f46e5); }
+    button.secondary-btn { background:#6b7280; color:white; border:none; }
+    button.secondary-btn:hover { background:#4b5563; }
+    .nav-links a { text-decoration:none; margin:10px; }
+    .prompt { font-size:1.2rem; font-weight:bold; margin-bottom:15px; }
+
+    /* ===== 苦手モード非表示用 ===== */
+    .hidden { display:none; }
+
+    /* ===== 採点中オーバーレイ ===== */
+    .overlay {
+      position: absolute;
+      top:0; left:0; width:100%; height:100%;
+      background: rgba(0,0,0,0.4);
+      display:flex; align-items:center; justify-content:center;
+      color:white; font-size:1.5rem; font-weight:bold;
+      border-radius:20px;
+      z-index:10;
+      display:none; /* 初期は非表示 */
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="main-title">英作文トレーニング</h1>
+    <p>日本語のお題に沿って英文を入力してください。</p>
+
+    <!-- オーバーレイ -->
+    <div class="overlay" id="overlay">採点中…⏳</div>
+
+    <div class="quiz-card">
+      <p class="prompt">📝 お題: {{ prompt }}</p>
+      <form id="writingForm" method="POST" action="{{ url_for('submit_writing') }}">
+        <textarea name="answer" rows="5" placeholder="ここに英文を入力..." required></textarea>
+        <input type="hidden" name="user_id" value="{{ user_id }}">
+        <input type="hidden" name="prompt_id" value="{{ prompt_id }}">
+        {% if not is_guest %}
+        <!-- 苦手モード用 hidden -->
+        <input type="hidden" name="review_mode" value="1">
+        {% endif %}
+        <br>
+        <button type="submit" class="primary-btn">送信して採点</button>
+      </form>
+    </div>
+
+    <div class="nav-links">
+      <a href="{{ url_for('index') }}"><button class="secondary-btn">トップに戻る</button></a>
+      <a href="{{ url_for('logout') }}"><button class="secondary-btn">ログアウト</button></a>
+    </div>
+  </div>
+
+  <script>
+    // フォーム送信時に採点中オーバーレイ表示
+    const form = document.getElementById('writingForm');
+    const overlay = document.getElementById('overlay');
+
+    form.addEventListener('submit', function(){
+      overlay.style.display = 'flex';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>英語学習アプリ</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=6">
+  <style>
+    /* ===== ベース ===== */
+    body {
+      font-family:"Hiragino Sans","Noto Sans JP",sans-serif;
+      background: linear-gradient(135deg, #eef2ff, #f8fafc);
+      margin:0; padding:0; color:#333;
+    }
+
+    .container {
+      max-width:700px;
+      margin:80px auto 60px auto;
+      text-align:center;
+      padding:30px 20px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      position:relative;
+    }
+
+    h1.main-title {
+      font-size:2.4rem;
+      margin-bottom:20px;
+      background: linear-gradient(90deg,#4f46e5,#7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight:800;
+    }
+
+    p.average-score {
+      margin-bottom:30px;
+      font-weight:bold;
+      color:#111;
+      font-size:1.1rem;
+    }
+
+    /* ===== カード ===== */
+    .quiz-card {
+      width:100%;
+      padding:30px 20px;
+      border-radius:18px;
+      margin:25px 0;
+      background: linear-gradient(145deg,#ffffff,#f3f4f6);
+      box-shadow: 0 8px 25px rgba(0,0,0,0.1), 0 4px 12px rgba(0,0,0,0.05);
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+    .quiz-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 15px 35px rgba(0,0,0,0.15), 0 6px 14px rgba(0,0,0,0.08);
+    }
+    .quiz-card h2 {
+      font-size:1.5rem;
+      margin-bottom:10px;
+      color:#4f46e5;
+    }
+    .quiz-card p {
+      font-size:1rem;
+      line-height:1.6;
+      color:#111;
+      margin-bottom:20px;
+    }
+
+    /* ===== ボタン ===== */
+    button {
+      margin:0;
+      padding:12px 28px;
+      font-size:1rem;
+      border-radius:12px;
+      cursor:pointer;
+      transition:0.3s;
+      font-weight:700;
+      border:none;
+    }
+
+    button.primary-btn {
+      background: linear-gradient(135deg,#4f46e5,#7c3aed);
+      color:white;
+      box-shadow: 0 6px 18px rgba(79,70,229,0.3);
+    }
+    button.primary-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px rgba(79,70,229,0.4);
+    }
+
+    button.secondary-btn {
+      background: linear-gradient(135deg,#6b7280,#4b5563);
+      color:white;
+      box-shadow: 0 6px 18px rgba(107,114,128,0.3);
+    }
+    button.secondary-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px rgba(107,114,128,0.4);
+    }
+
+    /* ===== ログアウトボタン（固定右上） ===== */
+    .logout-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: linear-gradient(135deg,#dc2626,#b91c1c);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 16px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(220,38,38,0.3);
+      transition: 0.3s;
+      z-index: 100;
+    }
+    .logout-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(220,38,38,0.4);
+    }
+
+    /* ===== ナビリンク ===== */
+    .nav-links {
+      margin-top: 30px;
+      display:flex;
+      gap:20px;
+      flex-wrap: wrap;
+      justify-content:center;
+    }
+
+    /* ===== レスポンシブ ===== */
+    @media(max-width:480px){
+      h1.main-title { font-size:2rem; }
+      .quiz-card { padding:25px 15px; }
+      button { padding:10px 20px; font-size:0.95rem; }
+      .logout-btn { padding:8px 12px; font-size:0.9rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- ログアウトボタン固定 -->
+  <button class="logout-btn" onclick="location.href='{{ url_for('logout') }}'">ログアウト</button>
+
+  <div class="container">
+    <h1 class="main-title">英語学習アプリ</h1>
+    <p class="average-score">ようこそ、{{ username }} さん！</p>
+
+    <div class="quiz-card">
+      <h2>英単語クイズ</h2>
+      <p>今日の単語クイズに挑戦してみよう！</p>
+      <a href="{{ url_for('word_quiz') }}">
+        <button class="primary-btn">単語クイズに挑戦</button>
+      </a>
+      {% if not is_guest %}
+      <a href="{{ url_for('word_quiz', review=1) }}">
+        <button class="secondary-btn" style="margin-top:10px;">苦手単語復習</button>
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="quiz-card">
+      <h2>英作文トレーニング</h2>
+      <p>英文を入力して練習しよう！</p>
+      <a href="{{ url_for('writing_quiz') }}">
+        <button class="primary-btn">英作文トレーニングに挑戦</button>
+      </a>
+      {% if not is_guest %}
+      <a href="{{ url_for('writing_quiz', review=1) }}">
+        <button class="secondary-btn" style="margin-top:10px;">苦手英作文復習</button>
+      </a>
+      {% endif %}
+    </div>
+
+    <div class="nav-links">
+      <a href="{{ url_for('ranking') }}"><button class="secondary-btn">ランキングを見る</button></a>
+    </div>
+  </div>
+</body>
+</html>

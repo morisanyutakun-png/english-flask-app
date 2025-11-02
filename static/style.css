@@ -1,0 +1,144 @@
+/* フォント・背景 */
+body {
+  font-family: "Hiragino Sans", "Meiryo", sans-serif;
+  background: linear-gradient(135deg, #c3ecf9, #f1f1f1);
+  margin: 0;
+  padding: 0;
+}
+
+/* コンテナ */
+.container {
+  max-width: 650px;
+  margin: 60px auto;
+  background: #ffffffcc; /* 少し透明感 */
+  padding: 40px 30px;
+  border-radius: 20px;
+  box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+  text-align: center;
+  backdrop-filter: blur(10px);
+}
+
+/* タイトル */
+h1 {
+  color: #1E88E5;
+  font-size: 2.5em;
+  margin-bottom: 30px;
+  letter-spacing: 1px;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+}
+
+/* クイズカード */
+.quiz-card {
+  background: #1E88E5;
+  padding: 30px 20px;
+  border-radius: 16px;
+  margin-bottom: 20px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  color: white;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.quiz-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 35px rgba(0,0,0,0.25);
+}
+
+.word {
+  font-size: 3em;
+  font-weight: bold;
+  margin-bottom: 25px;
+  text-shadow: 1px 1px 3px rgba(0,0,0,0.2);
+}
+
+/* 入力欄 */
+input[type="text"] {
+  width: 90%;
+  padding: 14px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: none;
+  box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+  margin-bottom: 15px;
+  transition: 0.3s;
+}
+
+input[type="text"]:focus {
+  outline: none;
+  box-shadow: 0 0 8px #4A90E2;
+}
+
+/* ボタン */
+button {
+  padding: 12px 35px;
+  font-size: 16px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(45deg, #4A90E2, #357ABD);
+  color: white;
+  cursor: pointer;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+  transition: 0.3s;
+}
+
+button:hover {
+  background: linear-gradient(45deg, #357ABD, #1E5FA8);
+  transform: translateY(-3px);
+}
+
+/* フィードバックボックス */
+.feedback-box {
+  background: #fffbf0;
+  padding: 25px;
+  border-radius: 14px;
+  margin-bottom: 20px;
+  text-align: left;
+  color: #333;
+  border-left: 6px solid #F57C00;
+  animation: fadeIn 1s ease-in;
+}
+
+.score {
+  font-size: 1.6em;
+  color: #F57C00;
+  margin-bottom: 10px;
+}
+
+.example {
+  font-style: italic;
+  color: #555;
+}
+
+/* 平均スコア */
+.average-score {
+  font-size: 1.2em;
+  color: #1E88E5;
+  margin-bottom: 20px;
+}
+
+/* ナビリンク */
+.nav-links a {
+  margin: 0 12px;
+  text-decoration: none;
+  color: #4A90E2;
+  font-weight: bold;
+  transition: 0.3s;
+}
+
+.nav-links a:hover {
+  color: #1E5FA8;
+  text-decoration: underline;
+}
+
+.logout {
+  color: #E53935;
+}
+
+.logout:hover {
+  color: #B71C1C;
+}
+
+/* アニメーション */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>採点結果</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    // スコアアニメーション
+    window.onload = function() {
+      const scoreElement = document.getElementById("score");
+      const finalScore = parseInt(scoreElement.dataset.score);
+      let current = 0;
+      const interval = setInterval(() => {
+        if (current < finalScore) {
+          current++;
+          scoreElement.textContent = current + " 点";
+        } else {
+          clearInterval(interval);
+        }
+      }, 20);
+    };
+  </script>
+</head>
+<body class="fade-in">
+  <div class="container">
+    <h1>採点結果</h1>
+
+    <div class="score-box">
+      <h2 id="score" data-score="{{ score }}">0 点</h2>
+    </div>
+
+    <p><strong>アドバイス:</strong> {{ advice }}</p>
+    <p><strong>模範解答例:</strong> {{ example }}</p>
+
+    <a href="{{ url_for('index') }}">もう一度挑戦する</a>
+    <a href="{{ url_for('ranking') }}">ランキングを見る</a>
+  </div>
+</body>
+</html>

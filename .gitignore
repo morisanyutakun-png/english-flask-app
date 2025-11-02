@@ -1,0 +1,19 @@
+# Pythonキャッシュ
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 仮想環境
+venv/
+env/
+
+# 環境変数ファイル（これが重要！）
+.env
+
+# データベース
+*.db
+
+# その他
+*.log
+.DS_Store

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ログイン | 英作文アプリ</title>
+  <style>
+    body {
+      font-family: "Hiragino Sans", "Meiryo", sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #c3ecf9, #f1f1f1);
+    }
+
+    .container {
+      max-width: 400px;
+      margin: 80px auto;
+      padding: 30px;
+      background: #ffffffcc;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      text-align: center;
+    }
+
+    h1 { margin-bottom: 10px; color: #1E88E5; }
+    h2 { margin-bottom: 20px; color: #0D47A1; }
+    .error { color: #D32F2F; margin-bottom: 15px; font-weight: bold; }
+
+    form { display: flex; flex-direction: column; gap: 15px; text-align: left; }
+
+    label { font-weight: bold; margin-bottom: 5px; display: block; }
+
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px;
+      font-size: 16px;
+      border: none;
+      border-radius: 12px;
+      color: white;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    .login-btn { background: linear-gradient(45deg, #4A90E2, #357ABD); }
+    .login-btn:hover { background: linear-gradient(45deg, #357ABD, #1E5FA8); }
+
+    .guest-btn { background: linear-gradient(45deg, #10B981, #059669); }
+    .guest-btn:hover { background: linear-gradient(45deg, #059669, #047857); }
+
+    p { margin-top: 20px; text-align: center; }
+    a { color: #1E88E5; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>英作文トレーニング</h1>
+    <h2>ログイン</h2>
+
+    {% if error %}
+      <p class="error">{{ error }}</p>
+    {% endif %}
+
+    <!-- 通常ログインフォーム -->
+    <form method="POST" action="{{ url_for('login') }}">
+      <div class="form-group">
+        <label for="username">ユーザー名</label>
+        <input type="text" id="username" name="username" required>
+      </div>
+
+      <div class="form-group">
+        <label for="password">パスワード</label>
+        <input type="password" id="password" name="password" required>
+      </div>
+
+      <button type="submit" class="btn login-btn">ログイン</button>
+    </form>
+
+    <!-- ゲストログインフォーム（ユーザー名不要） -->
+    <form method="POST" action="{{ url_for('guest_login') }}" class="btn-row">
+      <button type="submit" class="btn guest-btn">ゲストでログイン</button>
+    </form>
+
+    <p>アカウントがない場合は <a href="{{ url_for('register') }}">新規登録</a></p>
+  </div>
+</body>
+</html>

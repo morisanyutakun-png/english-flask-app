@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ランキング</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: "Hiragino Sans", "Meiryo", sans-serif;
+      background: linear-gradient(135deg, #4e5d6c, #2c3e50);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      flex-direction: column;
+    }
+
+    h1 {
+      color: #ffd700;
+      text-shadow: 2px 2px 8px rgba(0,0,0,0.6);
+      margin-bottom: 30px;
+      font-size: 2.2em;
+    }
+
+    .chart-container {
+      background: #ffffffdd;
+      padding: 30px;
+      border-radius: 20px;
+      box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+      max-width: 700px;
+      width: 90%;
+    }
+
+    button {
+      margin-top: 30px;
+      padding: 12px 25px;
+      font-size: 16px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(45deg, #ff8c00, #ff4500);
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      transition: 0.3s;
+    }
+
+    button:hover {
+      background: linear-gradient(45deg, #ff4500, #ff8c00);
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+<body>
+  <h1>英語学習ランキング</h1>
+
+  <div class="chart-container">
+    <canvas id="rankingChart" width="600" height="400"></canvas>
+  </div>
+
+  <a href="{{ url_for('index') }}"><button>戻る</button></a>
+
+  <script>
+    // Flask から渡されるデータ: [(username, avg_score), ...]
+    const rankingData = {{ ranking|default([])|tojson | safe }};
+
+    // username と avg_score を配列化
+    const names = rankingData.map(item => item[0] || "名無し");
+    const scores = rankingData.map(item => Math.round(item[1]) || 0);
+
+    // 棒の色設定（トップ3はゴールド、シルバー、ブロンズ）
+    const barColors = scores.map((score, i) => {
+      if (i === 0) return 'rgba(255, 215, 0, 0.8)';      // 1位: ゴールド
+      if (i === 1) return 'rgba(192, 192, 192, 0.8)';    // 2位: シルバー
+      if (i === 2) return 'rgba(205, 127, 50, 0.8)';     // 3位: ブロンズ
+      return 'rgba(54, 162, 235, 0.7)';                  // その他
+    });
+
+    const ctx = document.getElementById('rankingChart').getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: names,
+        datasets: [{
+          label: '最高スコア',
+          data: scores,
+          backgroundColor: barColors,
+          borderColor: barColors.map(c => c.replace('0.8','1')),
+          borderWidth: 1,
+          borderRadius: 10
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: '英語学習ランキング', font: { size: 22 }, color: '#333' },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return `${context.label}: ${context.raw} 点`;
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 100,
+            ticks: { stepSize: 10, color: '#000' },
+            title: { display: true, text: 'スコア', color: '#000' }
+          },
+          x: {
+            ticks: { color: '#000' },
+            title: { display: true, text: 'ユーザー', color: '#000' }
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
