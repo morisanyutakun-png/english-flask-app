@@ -2,4 +2,4 @@ Flask
 gunicorn
 google-generativeai
 python-dotenv
-sqlite3-binary
+
