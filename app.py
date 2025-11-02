@@ -15,16 +15,15 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # ===== データベース設定 =====
-# 英単語クイズ・学習履歴
 DB_FILE = "english_learning.db"
-
-# 英作文などのライティングモード用
 WRITING_DB = "writing_quiz.db"
 
 # ===== DB初期化 =====
 def init_db():
+    db_exists = os.path.exists(DB_FILE)
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
+        # テーブル作成
         c.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE,
@@ -50,10 +49,23 @@ def init_db():
         )''')
         conn.commit()
 
+        # 初期データ投入（DB作成時のみ）
+        if not db_exists:
+            # サンプルユーザー
+            c.execute("INSERT INTO users (username, password) VALUES (?, ?)", ("testuser", "pass123"))
+            # サンプル単語
+            sample_words = [
+                ("apple", "リンゴ"),
+                ("book", "本"),
+                ("computer", "コンピュータ")
+            ]
+            c.executemany("INSERT INTO words (word, definition_ja) VALUES (?, ?)", sample_words)
+            conn.commit()
+
 def init_writing_db():
+    db_exists = os.path.exists(WRITING_DB)
     with sqlite3.connect(WRITING_DB) as conn:
         c = conn.cursor()
-        c.execute("DROP TABLE IF EXISTS writing_answers")
         c.execute('''CREATE TABLE IF NOT EXISTS writing_prompts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             prompt_text TEXT
@@ -72,6 +84,17 @@ def init_writing_db():
         )''')
         conn.commit()
 
+        # 初期お題投入
+        if not db_exists:
+            sample_prompts = [
+                ("私は昨日映画を見ました。",),
+                ("明日は雨が降るでしょう。",),
+                ("あなたの趣味は何ですか？",)
+            ]
+            c.executemany("INSERT INTO writing_prompts (prompt_text) VALUES (?)", sample_prompts)
+            conn.commit()
+
+# ===== DB初期化実行 =====
 init_db()
 init_writing_db()
 
