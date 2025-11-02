@@ -17,3 +17,4 @@ env/
 # その他
 *.log
 .DS_Store
+.env
