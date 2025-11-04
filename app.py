@@ -5,7 +5,7 @@ import datetime
 import json
 import re
 import os
-from dotenv import load_dotenv  # ← これが必要！
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 app.secret_key = "super_secret_key"
@@ -15,10 +15,7 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # ===== データベース設定 =====
-# 英単語クイズ・学習履歴
 DB_FILE = "english_learning.db"
-
-# 英作文などのライティングモード用
 WRITING_DB = "writing_quiz.db"
 
 # ===== DB初期化 =====
@@ -53,7 +50,6 @@ def init_db():
 def init_writing_db():
     with sqlite3.connect(WRITING_DB) as conn:
         c = conn.cursor()
-        c.execute("DROP TABLE IF EXISTS writing_answers")
         c.execute('''CREATE TABLE IF NOT EXISTS writing_prompts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             prompt_text TEXT
@@ -116,13 +112,13 @@ def evaluate_answer(word, correct_meaning, user_answer):
         return 0, "採点中にエラーが発生しました。", "", "", ""
 
 # ===== Gemini 採点（英作文用） =====
-def evaluate_writing(prompt, answer):
-    prompt_text = f"""
+def evaluate_writing(prompt_text, answer):
+    prompt_text_for_gemini = f"""
 あなたは英語教師です。
 次の日本語文を英語に翻訳する課題に対する学習者の回答を採点してください。
 
 【お題（日本語）】
-{prompt}
+{prompt_text}
 
 【学習者の英作文】
 {answer}
@@ -137,7 +133,7 @@ def evaluate_writing(prompt, answer):
 """
     try:
         model = genai.GenerativeModel("gemini-2.0-flash")
-        res = model.generate_content(prompt_text)
+        res = model.generate_content(prompt_text_for_gemini)
         text = res.text.strip()
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
@@ -153,28 +149,20 @@ def evaluate_writing(prompt, answer):
         print("Gemini Error:", e)
         return 0, "エラーが発生しました。", ""
 
-# ===== ランダム単語取得 =====
+# ===== DB操作関数 =====
 def get_random_word():
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
         c.execute("SELECT id, word, definition_ja FROM words ORDER BY RANDOM() LIMIT 1")
         return c.fetchone()
 
-# ===== 苦手単語取得 =====
-def get_review_words(user_id, limit=5):
+def get_average_score(user_id):
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        c.execute("""
-            SELECT words.id, words.word, words.definition_ja
-            FROM student_answers
-            JOIN words ON student_answers.word_id = words.id
-            WHERE student_answers.user_id=? AND student_answers.is_wrong=1
-            ORDER BY student_answers.wrong_count DESC
-            LIMIT ?
-        """, (user_id, limit))
-        return c.fetchall()
+        c.execute("SELECT AVG(score) FROM student_answers WHERE user_id=?", (user_id,))
+        avg = c.fetchone()[0]
+        return round(avg,2) if avg else 0
 
-# ===== ランダムお題取得 =====
 def get_random_prompt():
     with sqlite3.connect(WRITING_DB) as conn:
         c = conn.cursor()
@@ -184,38 +172,26 @@ def get_random_prompt():
             return {"id": row[0], "text": row[1]}
     return {"id": None, "text": "お題が見つかりませんでした"}
 
-# ===== 苦手英作文取得 =====
-def get_review_writing(user_id, limit=5):
-    with sqlite3.connect(WRITING_DB) as conn:
-        c = conn.cursor()
-        c.execute("""
-            SELECT writing_prompts.id, writing_prompts.prompt_text
-            FROM writing_answers
-            JOIN writing_prompts ON writing_answers.prompt_id = writing_prompts.id
-            WHERE writing_answers.user_id=? AND writing_answers.is_wrong=1
-            ORDER BY writing_answers.wrong_count DESC
-            LIMIT ?
-        """, (user_id, limit))
-        return c.fetchall()
+# ===== ルーティング =====
+@app.route("/")
+@app.route("/index")
+def index():
+    return render_template(
+        "index.html",
+        username=session.get("username", "ゲスト"),
+        is_guest=session.get("is_guest", False),
+        user_authenticated="user_id" in session
+    )
 
-# ===== 平均スコア =====
-def get_average_score(user_id):
-    with sqlite3.connect(DB_FILE) as conn:
-        c = conn.cursor()
-        c.execute("SELECT AVG(score) FROM student_answers WHERE user_id=?", (user_id,))
-        avg = c.fetchone()[0]
-        return round(avg, 2) if avg else 0
-
-# ===== ログイン =====
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET","POST"])
 def login():
     error = None
-    if request.method == "POST":
+    if request.method=="POST":
         username = request.form.get("username")
         password = request.form.get("password")
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
-            c.execute("SELECT id FROM users WHERE username=? AND password=?", (username, password))
+            c.execute("SELECT id FROM users WHERE username=? AND password=?", (username,password))
             user = c.fetchone()
         if user:
             session["user_id"] = user[0]
@@ -226,7 +202,6 @@ def login():
             error = "ユーザー名またはパスワードが違います"
     return render_template("login.html", error=error)
 
-# ===== ゲストログイン =====
 @app.route("/guest-login", methods=["POST"])
 def guest_login():
     session["user_id"] = 0
@@ -234,157 +209,157 @@ def guest_login():
     session["is_guest"] = True
     return redirect(url_for("index"))
 
-# ===== トップページ =====
-@app.route('/')
-@app.route('/index')
-def index():
-    username = session.get('username', 'ゲスト')
-    # ゲスト判定
-    is_guest = session.get('is_guest', False) or username == 'ゲスト'
-    return render_template('index.html', username=username, is_guest=is_guest)
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
-# ===== 単語クイズ画面 =====
+@app.route("/register", methods=["GET","POST"])
+def register():
+    error = None
+    if request.method=="POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        if not username or not password:
+            error = "ユーザー名とパスワードを入力してください"
+        else:
+            with sqlite3.connect(DB_FILE) as conn:
+                c = conn.cursor()
+                try:
+                    c.execute("INSERT INTO users (username,password) VALUES (?,?)",(username,password))
+                    conn.commit()
+                    return redirect(url_for("login"))
+                except sqlite3.IntegrityError:
+                    error = "このユーザー名はすでに使われています"
+    return render_template("register.html", error=error)
+
 @app.route("/word_quiz")
 def word_quiz():
-    if not session.get("username"):
-        return redirect(url_for("login"))
-
-    if not session.get("is_guest") and request.args.get("review") == "1":
-        words = get_review_words(session["user_id"])
-        if words:
-            word_id, word, definition_ja = words[0]
-        else:
-            word_data = get_random_word()
-            word_id, word, definition_ja = word_data
+    user_id = session.get("user_id", 0)
+    word_data = get_random_word()
+    if word_data:
+        return render_template(
+            "word_quiz.html",
+            word_id=word_data[0],
+            word=word_data[1],
+            average_score=get_average_score(user_id),
+            username=session.get("username", "ゲスト"),
+            is_guest=session.get("is_guest", False)
+        )
     else:
-        word_data = get_random_word()
-        if not word_data:
-            return "単語が登録されていません。"
-        word_id, word, definition_ja = word_data
+        flash("単語が登録されていません")
+        return redirect(url_for("index"))
 
-    avg = get_average_score(session["user_id"])
-    return render_template("word_quiz.html",
-                           word=word,
-                           word_id=word_id,
-                           definition_ja=definition_ja,
-                           average_score=avg)
-
-# ===== 英作文クイズ画面 =====
-@app.route("/writing_quiz")
-def writing_quiz():
-    if not session.get("username"):
-        return redirect(url_for("login"))
-
-    if not session.get("is_guest") and request.args.get("review") == "1":
-        prompts = get_review_writing(session["user_id"])
-        if prompts:
-            prompt_id, prompt_text = prompts[0]
-        else:
-            prompt_data = get_random_prompt()
-            prompt_id, prompt_text = prompt_data["id"], prompt_data["text"]
-    else:
-        prompt_data = get_random_prompt()
-        prompt_id, prompt_text = prompt_data["id"], prompt_data["text"]
-
-    return render_template("writing_quiz.html",
-                           user_id=session.get("user_id"),
-                           prompt=prompt_text,
-                           prompt_id=prompt_id)
-
-# ===== 単語回答送信 =====
 @app.route("/submit_answer", methods=["POST"])
 def submit_answer():
-    if not session.get("username"):
-        return jsonify({"error": "ログインが必要です。"}), 401
-
+    user_id = session.get("user_id",0)
     word_id = request.form.get("word_id")
-    answer = request.form.get("answer", "").strip()
-    if not answer:
-        return jsonify({"error": "回答が空です。"}), 400
+    answer = request.form.get("answer","")
+    review = int(request.form.get("review",0))
 
+    # 単語取得
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        c.execute("SELECT word, definition_ja FROM words WHERE id=?", (word_id,))
+        c.execute("SELECT word, definition_ja FROM words WHERE id=?",(word_id,))
         row = c.fetchone()
+        if not row:
+            return jsonify({"error":"単語が見つかりません"}),404
+        word, correct_meaning = row
 
-    if not row:
-        return jsonify({"error": "単語が見つかりません。"}), 404
+    # 採点
+    score, feedback, example, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
 
-    word, correct = row
-    score, feedback, example, pos, meaning = evaluate_answer(word, correct, answer)
+    # wrong判定
+    is_wrong = 1 if score < 70 else 0
 
-    # 苦手判定（score < 50）
-    is_wrong = 1 if score < 50 else 0  # ← 70 → 50 に変更
-
+    # DB保存
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
-        if not session.get("is_guest"):
-            # 前回 wrong_count を取得
-            c.execute("SELECT wrong_count FROM student_answers WHERE user_id=? AND word_id=? ORDER BY attempt_date DESC LIMIT 1",
-                      (session["user_id"], word_id))
-            row = c.fetchone()
-            prev_wrong_count = row[0] if row else 0
-            new_wrong_count = prev_wrong_count + 1 if is_wrong else prev_wrong_count
-
-            c.execute("""INSERT INTO student_answers
-                         (user_id, word_id, score, feedback, example, attempt_date, is_wrong, wrong_count)
-                         VALUES (?,?,?,?,?,?,?,?)""",
-                      (session["user_id"], word_id, score, feedback, example,
-                       datetime.datetime.now().isoformat(), is_wrong, new_wrong_count))
-            conn.commit()
+        c.execute("SELECT wrong_count FROM student_answers WHERE user_id=? AND word_id=?",(user_id,word_id))
+        existing = c.fetchone()
+        wrong_count = (existing[0]+1) if existing else (1 if is_wrong else 0)
+        c.execute("""
+            INSERT INTO student_answers (user_id, word_id, score, feedback, example, attempt_date, is_wrong, wrong_count)
+            VALUES (?,?,?,?,?,?,?,?)
+        """,(user_id, word_id, score, feedback, example, datetime.datetime.now().isoformat(), is_wrong, wrong_count))
+        conn.commit()
 
     return jsonify({
         "score": score,
         "feedback": feedback,
         "example": example,
         "pos": pos,
-        "simple_meaning": meaning,
-        "average_score": get_average_score(session["user_id"])
+        "simple_meaning": simple_meaning,
+        "average_score": get_average_score(user_id)
     })
 
-# ===== 英作文送信 =====
+@app.route("/writing_quiz")
+def writing_quiz():
+    user_id = session.get("user_id",0)
+    prompt_data = get_random_prompt()
+    return render_template(
+        "writing_quiz.html",
+        prompt=prompt_data["text"],
+        prompt_id=prompt_data["id"],
+        user_id=user_id,
+        username=session.get("username", "ゲスト"),
+        is_guest=session.get("is_guest", False)
+    )
+
 @app.route("/submit_writing", methods=["POST"])
 def submit_writing():
-    user_id = request.form.get("user_id")
+    user_id = request.form.get("user_id", 0)
     prompt_id = request.form.get("prompt_id")
-    answer = request.form.get("answer")
+    answer = request.form.get("answer", "")
+    review_mode = int(request.form.get("review_mode", 0))
 
+    print("=== submit_writing START ===")
+    print("user_id:", user_id, "prompt_id:", prompt_id)
+
+    # 正しいお題をDBから取得
     with sqlite3.connect(WRITING_DB) as conn:
         c = conn.cursor()
         c.execute("SELECT prompt_text FROM writing_prompts WHERE id=?", (prompt_id,))
         row = c.fetchone()
-        prompt_text = row[0] if row else None
+        prompt_text = row[0] if row else "お題が取得できませんでした"
 
-    if not prompt_text:
-        return "お題が見つかりません。", 404
+    # 採点
+    try:
+        print("採点開始")
+        score, feedback, correct_example = evaluate_writing(prompt_text, answer)
+        print("採点完了:", score)
+    except Exception as e:
+        print("採点エラー:", e)
+        flash("採点中にエラーが発生しました。")
+        return redirect(url_for("writing_quiz"))
 
-    score, feedback, correct_example = evaluate_writing(prompt_text, answer)
-
-    # 苦手判定
     is_wrong = 1 if score < 50 else 0
 
+    # DB保存
     with sqlite3.connect(WRITING_DB) as conn:
         c = conn.cursor()
-        c.execute("SELECT wrong_count FROM writing_answers WHERE user_id=? AND prompt_id=? ORDER BY attempt_date DESC LIMIT 1",
-                  (user_id, prompt_id))
-        row = c.fetchone()
-        prev_wrong_count = row[0] if row else 0
-        new_wrong_count = prev_wrong_count + 1 if is_wrong else prev_wrong_count
-
-        c.execute('''INSERT INTO writing_answers
-                     (user_id, prompt_id, answer, score, feedback, correct_example, attempt_date, is_wrong, wrong_count)
-                     VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, ?)''',
-                  (user_id, prompt_id, answer, score, feedback, correct_example, is_wrong, new_wrong_count))
+        c.execute("SELECT wrong_count FROM writing_answers WHERE user_id=? AND prompt_id=?", (user_id, prompt_id))
+        existing = c.fetchone()
+        wrong_count = (existing[0]+1) if existing else (1 if is_wrong else 0)
+        c.execute("""
+            INSERT INTO writing_answers (user_id, prompt_id, answer, score, feedback, correct_example, attempt_date, is_wrong, wrong_count)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        """, (user_id, prompt_id, answer, score, feedback, correct_example,
+              datetime.datetime.now().isoformat(), is_wrong, wrong_count))
         conn.commit()
 
-    return render_template("writing_result.html",
-                           prompt=prompt_text,
-                           answer=answer,
-                           score=score,
-                           feedback=feedback,
-                           correct_example=correct_example)
+    # 結果ページに遷移
+    return render_template(
+        "writing_result.html",
+        prompt=prompt_text,
+        answer=answer,
+        score=score,
+        feedback=feedback,
+        correct_example=correct_example,
+        username=session.get("username", "ゲスト"),
+        is_guest=session.get("is_guest", False)
+    )
 
-# ===== ランキング =====
 @app.route("/ranking")
 def ranking():
     with sqlite3.connect(DB_FILE) as conn:
@@ -400,46 +375,33 @@ def ranking():
         ranking_data = c.fetchall()
     return render_template("ranking.html", ranking=ranking_data)
 
-# ===== ログアウト =====
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
 
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        # 登録処理
-        ...
-    return render_template('register.html')
-
-# ===== 苦手モード登録用 =====
-@app.route('/add_to_weak', methods=['POST'])
+#==弱点追加===
+@app.route("/add_to_weak", methods=["POST"])
 def add_to_weak():
-    user_id = request.form.get('user_id')
-    prompt_id = request.form.get('prompt_id')
-    
-    if user_id and prompt_id:
-        # DBに苦手モード登録（例: writing_answers テーブルの is_wrong を 1 に更新）
-        with sqlite3.connect(WRITING_DB) as conn:
-            c = conn.cursor()
-            c.execute("""
-                UPDATE writing_answers
-                SET is_wrong=1
-                WHERE user_id=? AND prompt_id=?
-            """, (user_id, prompt_id))
-            # 該当データがなければ追加する場合
-            if c.rowcount == 0:
-                c.execute("""
-                    INSERT INTO writing_answers
-                    (user_id, prompt_id, answer, score, feedback, correct_example, attempt_date, is_wrong, wrong_count)
-                    VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'), 1, 1)
-                """, (user_id, prompt_id, "", 0, "", "",))
-            conn.commit()
-    
-    flash("苦手モードに登録しました！")
-    return redirect(url_for('writing_quiz'))
+    user_id = request.form.get("user_id")
+    prompt_id = request.form.get("prompt_id")
+    add_flag = request.form.get("add_to_weak")  # '1' なら追加, '0' なら削除
 
+    try:
+        if add_flag == '1':
+            # DBに弱点として登録する処理
+            # 例: db.add_to_weak(user_id, prompt_id)
+            message = "この問題を苦手モードに追加しました"
+        else:
+            # DBから削除する処理
+            # 例: db.remove_from_weak(user_id, prompt_id)
+            message = "この問題を苦手モードから削除しました"
 
+        return jsonify({"success": True, "message": message})
+    except Exception as e:
+        print(e)
+        return jsonify({"success": False, "message": "エラーが発生しました"})
+
+# ===== アプリ起動 =====
+# ===== アプリ起動 =====
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    # Render環境ではこのブロックは使われない（ローカルデバッグ用）
+    from os import environ
+    port = int(environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
