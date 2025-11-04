@@ -321,6 +321,15 @@ def submit_writing():
         flash("サーバーエラーが発生しました。")
         return redirect(url_for("writing_quiz"))
 
+# -----------------------
+# ★追加：rankingルート（エラー防止）
+# -----------------------
+@app.route("/ranking")
+def ranking():
+    # とりあえずプレースホルダとしてindexにリダイレクト
+    flash("ランキング機能は準備中です。")
+    return redirect(url_for("index"))
+
 @app.route("/health")
 def health():
     return "OK", 200
