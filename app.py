@@ -161,7 +161,7 @@ def evaluate_writing(prompt_text, answer):
         score = 80 if len(answer.split()) > 3 else 30
         return score, "（簡易採点）改善点を確認してください", "This is an example."
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(f"お題:{prompt_text}\n回答:{answer}\nJSONで返して")
         data = parse_json_from_text(res.text or "")
         if data:
