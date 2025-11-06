@@ -147,7 +147,7 @@ JSON形式で出力:
 {{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
 """
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
         if data:
