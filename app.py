@@ -324,7 +324,15 @@ def health():
     return "OK", 200
 
 # -----------------------
-# ローカル起動
+# 追加修正： logout ルート
+# -----------------------
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("index"))
+
+# -----------------------
+# ローカル起動（Cloud Run では gunicorn で起動されるのでこのままでもOK）
 # -----------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
