@@ -5,7 +5,7 @@ import datetime
 import json
 import re
 import os
-from flask_cors import CORS  # 追加
+from flask_cors import CORS
 
 # -----------------------
 # Flask アプリ
@@ -14,12 +14,9 @@ app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_for_local_only")
 
 # -----------------------
-# CORS 設定（Renderフロントからの接続を許可）
+# CORS 設定
 # -----------------------
-# 全てのオリジンを許可（開発用）
-CORS(app)
-# 本番環境ではフロントのURLだけ許可する場合は以下のようにする
-# CORS(app, origins=["https://your-frontend.onrender.com"])
+CORS(app, origins=["https://english-flask-app.onrender.com"])
 
 # -----------------------
 # DB 設定
@@ -62,55 +59,52 @@ def init_db_file(path, create_statements):
         conn.commit()
 
 def init_all_dbs():
-    try:
-        create_users_words = [
-            '''CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                password TEXT
-            )''',
-            '''CREATE TABLE IF NOT EXISTS words (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                word TEXT UNIQUE,
-                definition_ja TEXT
-            )''',
-            '''CREATE TABLE IF NOT EXISTS student_answers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                word_id INTEGER,
-                score INTEGER,
-                feedback TEXT,
-                example TEXT,
-                attempt_date TEXT,
-                is_wrong INTEGER DEFAULT 0,
-                wrong_count INTEGER DEFAULT 0,
-                FOREIGN KEY(user_id) REFERENCES users(id),
-                FOREIGN KEY(word_id) REFERENCES words(id)
-            )'''
-        ]
-        create_writing = [
-            '''CREATE TABLE IF NOT EXISTS writing_prompts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                prompt_text TEXT
-            )''',
-            '''CREATE TABLE IF NOT EXISTS writing_answers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                prompt_id INTEGER,
-                answer TEXT,
-                score INTEGER,
-                feedback TEXT,
-                correct_example TEXT,
-                attempt_date TEXT,
-                is_wrong INTEGER DEFAULT 0,
-                wrong_count INTEGER DEFAULT 0
-            )'''
-        ]
-        init_db_file(DB_FILE, create_users_words)
-        init_db_file(WRITING_DB, create_writing)
-        print("✅ DBs initialized:", DB_FILE, WRITING_DB)
-    except Exception as e:
-        print("❌ DB initialization failed:", e)
+    create_users_words = [
+        '''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT
+        )''',
+        '''CREATE TABLE IF NOT EXISTS words (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word TEXT UNIQUE,
+            definition_ja TEXT
+        )''',
+        '''CREATE TABLE IF NOT EXISTS student_answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            word_id INTEGER,
+            score INTEGER,
+            feedback TEXT,
+            example TEXT,
+            attempt_date TEXT,
+            is_wrong INTEGER DEFAULT 0,
+            wrong_count INTEGER DEFAULT 0,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(word_id) REFERENCES words(id)
+        )'''
+    ]
+    create_writing = [
+        '''CREATE TABLE IF NOT EXISTS writing_prompts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prompt_text TEXT
+        )''',
+        '''CREATE TABLE IF NOT EXISTS writing_answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            prompt_id INTEGER,
+            answer TEXT,
+            score INTEGER,
+            feedback TEXT,
+            correct_example TEXT,
+            attempt_date TEXT,
+            is_wrong INTEGER DEFAULT 0,
+            wrong_count INTEGER DEFAULT 0
+        )'''
+    ]
+    init_db_file(DB_FILE, create_users_words)
+    init_db_file(WRITING_DB, create_writing)
+    print("✅ DBs initialized:", DB_FILE, WRITING_DB)
 
 init_all_dbs()
 
@@ -148,7 +142,7 @@ JSON形式で出力:
 {{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
 """
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
         if data:
@@ -209,40 +203,10 @@ def get_random_prompt():
     return {"id": None, "text": "お題が見つかりませんでした"}
 
 # -----------------------
-# ルーティング
+# API ルーティング（フロント向け）
 # -----------------------
-@app.route("/")
-@app.route("/index")
-def index():
-    return render_template("index.html",
-                           username=session.get("username","ゲスト"),
-                           is_guest=session.get("is_guest", False))
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    flash("ログアウトしました。")
-    return redirect(url_for("index"))
-
-@app.route("/word_quiz")
-def word_quiz():
-    review = request.args.get("review", default=0, type=int)
-    user_id = session.get("user_id", 0)
-    word_data = get_random_word()
-    if not word_data:
-        flash("単語が登録されていません。")
-        return redirect(url_for("index"))
-    word_id, word, definition_ja = word_data
-    return render_template("word_quiz.html",
-                           word_id=word_id,
-                           word=word,
-                           average_score=get_average_score(user_id),
-                           username=session.get("username","ゲスト"),
-                           is_guest=session.get("is_guest", False),
-                           review=review)
-
-@app.route("/submit_answer", methods=["POST"])
-def submit_answer():
+@app.route("/api/submit_answer", methods=["POST"])
+def api_submit_answer():
     try:
         user_id = session.get("user_id", 0)
         word_id = request.form.get("word_id")
@@ -270,25 +234,15 @@ def submit_answer():
             "score": score,
             "feedback": feedback,
             "example": example,
-            "average_score": get_average_score(user_id)
+            "pos": pos,
+            "simple_meaning": simple_meaning,
         })
     except Exception as e:
-        print("submit_answer error:", e)
+        print("api_submit_answer error:", e)
         return jsonify({"error": "internal server error"}), 500
 
-@app.route("/writing_quiz")
-def writing_quiz():
-    user_id = session.get("user_id", 0)
-    prompt = get_random_prompt()
-    return render_template("writing_quiz.html",
-                           prompt=prompt["text"],
-                           prompt_id=prompt["id"],
-                           user_id=user_id,
-                           username=session.get("username","ゲスト"),
-                           is_guest=session.get("is_guest", False))
-
-@app.route("/submit_writing", methods=["POST"])
-def submit_writing():
+@app.route("/api/submit_writing", methods=["POST"])
+def api_submit_writing():
     try:
         user_id = request.form.get("user_id", 0)
         prompt_id = request.form.get("prompt_id")
@@ -310,29 +264,57 @@ def submit_writing():
             """, (user_id, prompt_id, answer, score, feedback, correct_example, datetime.datetime.now().isoformat()))
             conn.commit()
 
-        return render_template("writing_result.html",
-                               prompt=prompt_text,
-                               answer=answer,
-                               score=score,
-                               feedback=feedback,
-                               correct_example=correct_example,
-                               username=session.get("username","ゲスト"))
+        return jsonify({
+            "score": score,
+            "feedback": feedback,
+            "correct_example": correct_example
+        })
     except Exception as e:
-        print("submit_writing error:", e)
-        flash("サーバーエラーが発生しました。")
-        return redirect(url_for("writing_quiz"))
+        print("api_submit_writing error:", e)
+        return jsonify({"error":"internal server error"}), 500
 
-@app.route("/ranking")
-def ranking():
-    flash("ランキング機能は準備中です。")
-    return redirect(url_for("index"))
+# -----------------------
+# 従来ルーティング（画面表示用）
+# -----------------------
+@app.route("/")
+@app.route("/index")
+def index():
+    return render_template("index.html",
+                           username=session.get("username","ゲスト"),
+                           is_guest=session.get("is_guest", False))
+
+@app.route("/word_quiz")
+def word_quiz():
+    user_id = session.get("user_id", 0)
+    word_data = get_random_word()
+    if not word_data:
+        flash("単語が登録されていません。")
+        return redirect(url_for("index"))
+    word_id, word, definition_ja = word_data
+    return render_template("word_quiz.html",
+                           word_id=word_id,
+                           word=word,
+                           average_score=get_average_score(user_id),
+                           username=session.get("username","ゲスト"),
+                           is_guest=session.get("is_guest", False))
+
+@app.route("/writing_quiz")
+def writing_quiz():
+    user_id = session.get("user_id", 0)
+    prompt = get_random_prompt()
+    return render_template("writing_quiz.html",
+                           prompt=prompt["text"],
+                           prompt_id=prompt["id"],
+                           user_id=user_id,
+                           username=session.get("username","ゲスト"),
+                           is_guest=session.get("is_guest", False))
 
 @app.route("/health")
 def health():
     return "OK", 200
 
 # -----------------------
-# ローカル開発用エントリ（Cloud Run では Gunicorn で起動）
+# ローカル起動
 # -----------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
