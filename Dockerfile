@@ -11,9 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # アプリコードコピー
 COPY . .
 
-# 環境変数（Cloud Run で上書き可能）
+# 環境変数
 ENV PORT 8080
-ENV FLASK_ENV=production
 
-# Cloud Run 起動コマンド
-CMD ["python", "app.py"]
+# Gunicorn で起動
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "0", "app:app"]
