@@ -5,12 +5,21 @@ import datetime
 import json
 import re
 import os
+from flask_cors import CORS  # 追加
 
 # -----------------------
 # Flask アプリ
 # -----------------------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_for_local_only")
+
+# -----------------------
+# CORS 設定（Renderフロントからの接続を許可）
+# -----------------------
+# 全てのオリジンを許可（開発用）
+CORS(app)
+# 本番環境ではフロントのURLだけ許可する場合は以下のようにする
+# CORS(app, origins=["https://your-frontend.onrender.com"])
 
 # -----------------------
 # DB 設定
@@ -323,7 +332,7 @@ def health():
     return "OK", 200
 
 # -----------------------
-# ローカル開発用エントリ（Cloud Run では Gunicorn を使う）
+# ローカル開発用エントリ（Cloud Run では Gunicorn で起動）
 # -----------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
