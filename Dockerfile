@@ -14,5 +14,6 @@ COPY . .
 # 環境変数
 ENV PORT 8080
 
-# Cloud Run 用に Gunicorn で起動
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "app:app"]
+# Cloud Run 用コマンド（PORT 環境変数を Gunicorn に渡す）
+CMD exec gunicorn --bind 0.0.0.0:${PORT} \
+    --workers 1 --threads 8 --timeout 0 app:app
