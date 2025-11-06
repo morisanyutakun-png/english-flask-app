@@ -319,6 +319,33 @@ def writing_quiz():
                            username=session.get("username","ゲスト"),
                            is_guest=session.get("is_guest", False))
 
+# -----------------------
+# 新規追加：ランキング画面
+# -----------------------
+@app.route("/ranking")
+def ranking():
+    # 例としてユーザーごとの平均スコアを取得して表示
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute("""
+                SELECT u.username, AVG(s.score) as avg_score
+                FROM student_answers s
+                JOIN users u ON s.user_id = u.id
+                GROUP BY u.id
+                ORDER BY avg_score DESC
+                LIMIT 10
+            """)
+            ranking_data = c.fetchall()
+    except Exception as e:
+        logger.error("DB Error ranking: %s", e)
+        ranking_data = []
+
+    return render_template("ranking.html",
+                           ranking=ranking_data,
+                           username=session.get("username","ゲスト"),
+                           is_guest=session.get("is_guest", False))
+
 @app.route("/health")
 def health():
     return "OK", 200
@@ -332,7 +359,7 @@ def logout():
     return redirect(url_for("index"))
 
 # -----------------------
-# ローカル起動（Cloud Run では gunicorn で起動されるのでこのままでもOK）
+# ローカル起動
 # -----------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
