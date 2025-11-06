@@ -1,5 +1,6 @@
 Flask
 gunicorn
-google-generativeai
+google-generativeai>=0.9.0
 python-dotenv
+
 
