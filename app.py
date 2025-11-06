@@ -323,8 +323,9 @@ def health():
     return "OK", 200
 
 # -----------------------
-# ローカル起動はコメントアウト（Cloud Run では Gunicorn で起動）
+# ローカル開発用エントリ（Cloud Run では Gunicorn を使う）
 # -----------------------
-# if __name__ == "__main__":
-#     port = int(os.environ.get("PORT", 5000))
-#     app.run(host="0.0.0.0", port=port, debug=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    print(f"🚀 Starting local Flask server on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=True)
