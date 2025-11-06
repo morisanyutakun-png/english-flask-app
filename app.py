@@ -14,23 +14,28 @@ app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_for_local_only")
 
 # -----------------------
-# CORS 設定
+# CORS 設定（Cloud Run 用）
 # -----------------------
-CORS(app, origins=["https://english-flask-app.onrender.com"])
+CORS(app, origins="*")  # 外部フロントからのアクセスを許可する場合
 
 # -----------------------
-# DB 設定
+# DB 設定（Cloud Run は書き込み可能なのは /tmp のみ）
 # -----------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DB_FILE = os.path.join(BASE_DIR, "english_learning.db")
 REPO_WRITING_DB = os.path.join(BASE_DIR, "writing_quiz.db")
 
 TMP_DIR = "/tmp"
-DB_DIR = os.getenv("DB_DIR", TMP_DIR)
-os.makedirs(DB_DIR, exist_ok=True)
+DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
+WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
 
-DB_FILE = REPO_DB_FILE if os.path.exists(REPO_DB_FILE) else os.path.join(DB_DIR, "english_learning.db")
-WRITING_DB = REPO_WRITING_DB if os.path.exists(REPO_WRITING_DB) else os.path.join(DB_DIR, "writing_quiz.db")
+# コンテナ起動時に初期 DB があればコピー
+if os.path.exists(REPO_DB_FILE):
+    import shutil
+    shutil.copy(REPO_DB_FILE, DB_FILE)
+if os.path.exists(REPO_WRITING_DB):
+    import shutil
+    shutil.copy(REPO_WRITING_DB, WRITING_DB)
 
 # -----------------------
 # Gemini 設定
@@ -107,7 +112,6 @@ def init_all_dbs():
     print("✅ DBs initialized:", DB_FILE, WRITING_DB)
 
 init_all_dbs()
-
 # -----------------------
 # JSON 抽出ユーティリティ
 # -----------------------
@@ -317,6 +321,6 @@ def health():
 # ローカル起動
 # -----------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
     print(f"🚀 Starting local Flask server on port {port}")
     app.run(host="0.0.0.0", port=port, debug=True)

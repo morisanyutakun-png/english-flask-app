@@ -5,7 +5,6 @@
   <title>英単語クイズ</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=34">
   <style>
-    /* ここは今のままの CSS を維持 */
     body { font-family:"Hiragino Sans","Noto Sans JP",sans-serif; background: linear-gradient(135deg,#f8fafc,#eef2ff); margin:0; padding:0; color:#333; }
     .container { max-width:650px; margin:50px auto; text-align:center; background:white; border-radius:20px; box-shadow:0 10px 25px rgba(0,0,0,0.1); padding:30px 20px; }
     .main-title { font-size:2rem; margin-bottom:15px; background:linear-gradient(90deg,#4f46e5,#7c3aed); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight:700; }
@@ -120,7 +119,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
     try{
       const reviewFlag="{{ 1 if review else 0 }}";
-      const response=await fetch("{{ url_for('submit_answer') }}",{
+      const response=await fetch("{{ url_for('api_submit_answer') }}",{
         method:'POST',
         headers:{'Content-Type':'application/x-www-form-urlencoded'},
         body:`word_id=${encodeURIComponent(wordId)}&answer=${encodeURIComponent(answer)}&review=${encodeURIComponent(reviewFlag)}`
