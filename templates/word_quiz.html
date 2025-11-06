@@ -3,16 +3,34 @@
 <head>
   <meta charset="UTF-8">
   <title>英単語クイズ</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=33">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=34">
   <style>
-    body { font-family:"Hiragino Sans","Noto Sans JP",sans-serif; background: linear-gradient(135deg,#f8fafc,#eef2ff); margin:0; padding:0; color:#333; }
-    .container { max-width:650px; margin:50px auto; text-align:center; background:white; border-radius:20px; box-shadow:0 10px 25px rgba(0,0,0,0.1); padding:30px 20px; }
-    .main-title { font-size:2rem; margin-bottom:15px; background:linear-gradient(90deg,#4f46e5,#7c3aed); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight:700; }
+    body {
+      font-family:"Hiragino Sans","Noto Sans JP",sans-serif;
+      background: linear-gradient(135deg,#f8fafc,#eef2ff);
+      margin:0; padding:0; color:#333;
+    }
+    .container {
+      max-width:650px; margin:50px auto; text-align:center;
+      background:white; border-radius:20px;
+      box-shadow:0 10px 25px rgba(0,0,0,0.1);
+      padding:30px 20px;
+    }
+    .main-title {
+      font-size:2rem; margin-bottom:15px;
+      background:linear-gradient(90deg,#4f46e5,#7c3aed);
+      -webkit-background-clip:text;
+      -webkit-text-fill-color:transparent;
+      font-weight:700;
+    }
     .average-score { margin-bottom:10px; font-weight:bold; color:#444; }
     .review-mode { font-size:0.95rem; color:#dc2626; margin-bottom:15px; font-weight:bold; }
 
-    .quiz-card { padding:25px 20px; border-radius:16px; margin:25px auto; background:#959797; box-shadow:0 5px 15px rgba(224,152,152,0.1); }
-    .highlight { color:#f2f5f6; font-weight:bold; }
+    .quiz-card {
+      padding:25px 20px; border-radius:16px; margin:25px auto;
+      background:#f9fafb; box-shadow:0 5px 15px rgba(0,0,0,0.05);
+    }
+    .highlight { color:#111; font-weight:bold; }
 
     input, button { margin:10px; padding:10px 14px; font-size:1rem; border-radius:8px; }
     input { border:1px solid #ccc; width:60%; text-align:center; }
@@ -20,7 +38,7 @@
     .primary-btn:hover { background:#1d4ed8; }
     .secondary-btn { background:#6b7280; color:white; border:none; cursor:pointer; transition:0.2s; }
     .secondary-btn:hover { background:#4b5563; }
-    .tts-btn { margin-left:6px; cursor:pointer; background:#e35f3e; border:1px solid #060606; border-radius:6px; padding:2px 6px; font-size:0.9rem; }
+    .tts-btn { margin-left:6px; cursor:pointer; background:#e35f3e; border:none; border-radius:6px; padding:4px 8px; font-size:0.9rem; color:white; }
 
     #progress-container { margin-top:10px; text-align:center; display:none; }
     #progress-bar { height:8px; width:0%; background:linear-gradient(90deg,#4f46e5,#22c55e); border-radius:10px; transition:width 0.3s ease; }
@@ -51,7 +69,7 @@
   <h1 class="main-title">英単語クイズ</h1>
 
   <p class="average-score">💯 平均スコア: 
-    <span id="average-score">{{ average_score | default(0) }}</span>
+    <span id="average-score">{{ average_score or 0 }}</span>
   </p>
 
   {% if review %}
@@ -60,7 +78,7 @@
 
   <section class="quiz-card" id="quiz-card">
     <p class="word" id="word">
-      ★ 問題: <span class="highlight">{{ word | default('（単語がありません）') }}</span>
+      ★ 問題: <span class="highlight">{{ word or '（単語がありません）' }}</span>
       <button class="tts-btn" id="tts-word-btn">🎵 発音</button>
     </p>
 
@@ -72,7 +90,7 @@
       <p id="progress-text">0%</p>
     </div>
 
-    <input type="hidden" id="word-id" value="{{ word_id | default(0) }}">
+    <input type="hidden" id="word-id" value="{{ word_id or 0 }}">
   </section>
 
   <section class="feedback-box" id="feedback-box" style="display:none;">
@@ -100,114 +118,123 @@
 
   <nav class="nav-links">
     <a href="{{ url_for('index') }}">トップに戻る</a>
-    {% if current_user.is_authenticated | default(false) %}
+    {% if current_user and current_user.is_authenticated %}
       <a href="{{ url_for('logout') }}" class="logout">ログアウト</a>
     {% endif %}
   </nav>
 </main>
 
 <script>
-const submitBtn = document.getElementById('submit-btn');
-const answerInput = document.getElementById('answer');
-const wordId = document.getElementById('word-id').value;
-const progressContainer = document.getElementById('progress-container');
-const progressBar = document.getElementById('progress-bar');
-const progressText = document.getElementById('progress-text');
+document.addEventListener("DOMContentLoaded", () => {
+  const submitBtn = document.getElementById('submit-btn');
+  const answerInput = document.getElementById('answer');
+  const wordId = document.getElementById('word-id').value;
+  const progressContainer = document.getElementById('progress-container');
+  const progressBar = document.getElementById('progress-bar');
+  const progressText = document.getElementById('progress-text');
 
-let voices = [];
-function loadVoices(){ voices = speechSynthesis.getVoices(); }
-speechSynthesis.onvoiceschanged = loadVoices;
-loadVoices();
-function playEnglishTTS(text){
-  if(!text) return;
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'en-US'; utterance.rate=0.95; utterance.pitch=1.0; utterance.volume=1.0;
-  const enVoice = voices.find(v=>v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v=>v.lang.startsWith('en'));
-  if(enVoice) utterance.voice = enVoice;
-  speechSynthesis.speak(utterance);
-}
-document.getElementById('tts-word-btn')?.addEventListener('click', ()=>playEnglishTTS(document.querySelector('#word .highlight')?.textContent));
-document.getElementById('tts-example-btn')?.addEventListener('click', ()=>playEnglishTTS(document.getElementById('example-sentence')?.textContent));
+  let voices = [];
+  function loadVoices(){ voices = speechSynthesis.getVoices(); }
+  speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
 
-submitBtn.addEventListener('click', async ()=>{
-  const answer = answerInput.value.trim();
-  if(!answer) return alert('回答を入力してください');
-
-  submitBtn.disabled = true;
-  submitBtn.textContent = '採点中...';
-  progressContainer.style.display='block';
-  let progress=0;
-  const interval = setInterval(()=>{ progress=Math.min(progress+Math.random()*15,90); progressBar.style.width=progress+'%'; progressText.textContent=Math.floor(progress)+'%'; },300);
-
-  try{
-    const reviewFlag = "{{ review | default(0) }}";
-    const response = await fetch('{{ url_for("submit_answer") }}',{
-      method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded'},
-      body:`word_id=${encodeURIComponent(wordId)}&answer=${encodeURIComponent(answer)}&review=${encodeURIComponent(reviewFlag)}`
-    });
-    if(!response.ok) throw new Error('サーバーエラー');
-    const data = await response.json();
-
-    clearInterval(interval);
-    progressBar.style.width='100%';
-    progressText.textContent='100%';
-
-    setTimeout(()=>{
-      progressContainer.style.display='none';
-      document.getElementById('quiz-card').style.display='none';
-      const feedbackBox = document.getElementById('feedback-box');
-      feedbackBox.style.display='block';
-
-      const nextButtons = document.getElementById('next-buttons');
-      nextButtons.innerHTML='';
-
-      const nextNormal = document.createElement('button');
-      nextNormal.textContent='通常モードで次へ ▶';
-      nextNormal.className='secondary-btn';
-      nextNormal.onclick=()=>location.href='{{ url_for("word_quiz") }}';
-      nextButtons.appendChild(nextNormal);
-
-      {% if current_user.is_authenticated | default(false) %}
-      const nextReview = document.createElement('button');
-      nextReview.textContent='苦手モードで次へ ▶';
-      nextReview.className='primary-btn';
-      nextReview.style.marginLeft='10px';
-      nextReview.onclick=()=>location.href='{{ url_for("word_quiz", review=1) }}';
-      nextButtons.appendChild(nextReview);
-      {% endif %}
-    },400);
-
-    document.getElementById('average-score').textContent = data.average_score ?? 0;
-
-    const posMeaningBox=document.getElementById('pos-meaning-box');
-    posMeaningBox.innerHTML='';
-    if(data.pos) posMeaningBox.innerHTML+=`<div class="card accent-blue"><div class="card-label">📘 品詞</div><div class="card-content">${data.pos}</div></div>`;
-    if(data.simple_meaning) posMeaningBox.innerHTML+=`<div class="card accent-green"><div class="card-label">💡 意味</div><div class="card-content">${data.simple_meaning}</div></div>`;
-
-    if(data.score!==undefined){
-      const scoreEl=document.getElementById('score-text');
-      scoreEl.textContent=`${data.score} 点`;
-      scoreEl.classList.add('score-animate');
-    }
-
-    document.getElementById('feedback-text').innerHTML=(data.feedback||'').replace(/\n/g,'<br>');
-
-    if(data.example){
-      const exampleBox = document.getElementById('example-box');
-      exampleBox.style.display='block';
-      document.getElementById('example-sentence').textContent=data.example;
-      document.getElementById('example-translation').textContent=data.example_ja||'';
-    }
-
-  }catch(err){
-    clearInterval(interval);
-    alert('通信エラー: '+err.message);
-    progressContainer.style.display='none';
-  }finally{
-    submitBtn.disabled=false;
-    submitBtn.textContent='回答する';
+  function playEnglishTTS(text){
+    if(!text) return;
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'en-US'; utter.rate = 0.95; utter.pitch = 1.0;
+    const enVoice = voices.find(v=>v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v=>v.lang.startsWith('en'));
+    if(enVoice) utter.voice = enVoice;
+    speechSynthesis.speak(utter);
   }
+
+  document.getElementById('tts-word-btn')?.addEventListener('click', ()=>playEnglishTTS(document.querySelector('#word .highlight')?.textContent));
+  document.getElementById('tts-example-btn')?.addEventListener('click', ()=>playEnglishTTS(document.getElementById('example-sentence')?.textContent));
+
+  submitBtn.addEventListener('click', async ()=>{
+    const answer = answerInput.value.trim();
+    if(!answer) return alert('回答を入力してください');
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = '採点中...';
+    progressContainer.style.display='block';
+    let progress=0;
+    const interval = setInterval(()=>{
+      progress=Math.min(progress+Math.random()*15,90);
+      progressBar.style.width=progress+'%';
+      progressText.textContent=Math.floor(progress)+'%';
+    },300);
+
+    try {
+      const reviewFlag = "{{ 1 if review else 0 }}";
+      const response = await fetch("{{ url_for('submit_answer') }}", {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:`word_id=${encodeURIComponent(wordId)}&answer=${encodeURIComponent(answer)}&review=${encodeURIComponent(reviewFlag)}`
+      });
+
+      if(!response.ok) throw new Error('サーバーエラー');
+      const data = await response.json();
+
+      clearInterval(interval);
+      progressBar.style.width='100%';
+      progressText.textContent='100%';
+
+      setTimeout(()=>{
+        progressContainer.style.display='none';
+        document.getElementById('quiz-card').style.display='none';
+        const feedbackBox = document.getElementById('feedback-box');
+        feedbackBox.style.display='block';
+
+        const nextButtons = document.getElementById('next-buttons');
+        nextButtons.innerHTML='';
+
+        const nextNormal = document.createElement('button');
+        nextNormal.textContent='通常モードで次へ ▶';
+        nextNormal.className='secondary-btn';
+        nextNormal.onclick=()=>location.href='{{ url_for("word_quiz") }}';
+        nextButtons.appendChild(nextNormal);
+
+        {% if current_user and current_user.is_authenticated %}
+        const nextReview = document.createElement('button');
+        nextReview.textContent='苦手モードで次へ ▶';
+        nextReview.className='primary-btn';
+        nextReview.style.marginLeft='10px';
+        nextReview.onclick=()=>location.href='{{ url_for("word_quiz", review=1) }}';
+        nextButtons.appendChild(nextReview);
+        {% endif %}
+      },400);
+
+      document.getElementById('average-score').textContent = data.average_score ?? 0;
+
+      const posMeaningBox=document.getElementById('pos-meaning-box');
+      posMeaningBox.innerHTML='';
+      if(data.pos) posMeaningBox.innerHTML+=`<div class="card accent-blue"><div>📘 品詞</div><div>${data.pos}</div></div>`;
+      if(data.simple_meaning) posMeaningBox.innerHTML+=`<div class="card accent-green"><div>💡 意味</div><div>${data.simple_meaning}</div></div>`;
+
+      if(data.score!==undefined){
+        const scoreEl=document.getElementById('score-text');
+        scoreEl.textContent=`${data.score} 点`;
+        scoreEl.classList.add('score-animate');
+      }
+
+      document.getElementById('feedback-text').innerHTML=(data.feedback||'').replace(/\n/g,'<br>');
+
+      if(data.example){
+        const exampleBox=document.getElementById('example-box');
+        exampleBox.style.display='block';
+        document.getElementById('example-sentence').textContent=data.example;
+        document.getElementById('example-translation').textContent=data.example_ja||'';
+      }
+
+    } catch(err) {
+      clearInterval(interval);
+      alert('通信エラー: '+err.message);
+      progressContainer.style.display='none';
+    } finally {
+      submitBtn.disabled=false;
+      submitBtn.textContent='回答する';
+    }
+  });
 });
 </script>
 </body>
