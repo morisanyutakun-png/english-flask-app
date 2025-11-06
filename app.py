@@ -1,38 +1,28 @@
-# studyST/app.py
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 import sqlite3
 import datetime
 import json
 import re
 import os
-from dotenv import load_dotenv
+
+# Colabでは.env読み込みより直接APIキー設定推奨
+GEMINI_API_KEY = "YOUR_GEMINI_2_5_KEY"  # Colabでは直接設定でもOK
 
 # -----------------------
-# .env 読み込み（ローカルのみ）
+# Flask 初期化
 # -----------------------
-if os.path.exists(".env"):
-    load_dotenv()
-
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_for_local_only")
+app.secret_key = "dev_secret_for_colab"
 
 # -----------------------
-# DB 設定
+# DB 設定（Colabでは /content/tmp に置く）
 # -----------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_DB_FILE = os.path.join(BASE_DIR, "english_learning.db")
-REPO_WRITING_DB = os.path.join(BASE_DIR, "writing_quiz.db")
+TMP_DIR = "/content/tmp"
+if not os.path.exists(TMP_DIR):
+    os.makedirs(TMP_DIR, exist_ok=True)
 
-TMP_DIR = "/tmp"
-DB_DIR = os.getenv("DB_DIR", TMP_DIR)
-if not os.path.exists(DB_DIR):
-    try:
-        os.makedirs(DB_DIR, exist_ok=True)
-    except Exception as e:
-        print("Warning: couldn't create DB_DIR:", e)
-
-DB_FILE = REPO_DB_FILE if os.path.exists(REPO_DB_FILE) else os.path.join(DB_DIR, "english_learning.db")
-WRITING_DB = REPO_WRITING_DB if os.path.exists(REPO_WRITING_DB) else os.path.join(DB_DIR, "writing_quiz.db")
+DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
+WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
 
 # -----------------------
 # Gemini 設定
@@ -40,18 +30,14 @@ WRITING_DB = REPO_WRITING_DB if os.path.exists(REPO_WRITING_DB) else os.path.joi
 HAS_GEMINI = False
 try:
     import google.generativeai as genai
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-        HAS_GEMINI = True
-    else:
-        print("⚠️ GEMINI_API_KEY not set; running without Gemini.")
+    genai.configure(api_key=GEMINI_API_KEY)
+    HAS_GEMINI = True
 except Exception as e:
-    print("⚠️ google.generativeai not available or failed to init:", e)
+    print("⚠️ Gemini init failed:", e)
     HAS_GEMINI = False
 
 # -----------------------
-# DB 初期化
+# DB 初期化関数（元コードそのまま）
 # -----------------------
 def init_db_file(path, create_statements):
     with sqlite3.connect(path) as conn:
@@ -61,55 +47,49 @@ def init_db_file(path, create_statements):
         conn.commit()
 
 def init_all_dbs():
-    try:
-        create_users_words = [
-            '''CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                password TEXT
-            )''',
-            '''CREATE TABLE IF NOT EXISTS words (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                word TEXT UNIQUE,
-                definition_ja TEXT
-            )''',
-            '''CREATE TABLE IF NOT EXISTS student_answers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                word_id INTEGER,
-                score INTEGER,
-                feedback TEXT,
-                example TEXT,
-                attempt_date TEXT,
-                is_wrong INTEGER DEFAULT 0,
-                wrong_count INTEGER DEFAULT 0,
-                FOREIGN KEY(user_id) REFERENCES users(id),
-                FOREIGN KEY(word_id) REFERENCES words(id)
-            )'''
-        ]
-        create_writing = [
-            '''CREATE TABLE IF NOT EXISTS writing_prompts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                prompt_text TEXT
-            )''',
-            '''CREATE TABLE IF NOT EXISTS writing_answers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                prompt_id INTEGER,
-                answer TEXT,
-                score INTEGER,
-                feedback TEXT,
-                correct_example TEXT,
-                attempt_date TEXT,
-                is_wrong INTEGER DEFAULT 0,
-                wrong_count INTEGER DEFAULT 0
-            )'''
-        ]
-        init_db_file(DB_FILE, create_users_words)
-        init_db_file(WRITING_DB, create_writing)
-        print("✅ DBs initialized:", DB_FILE, WRITING_DB)
-    except Exception as e:
-        print("❌ DB initialization failed:", e)
+    create_users_words = [
+        '''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT
+        )''',
+        '''CREATE TABLE IF NOT EXISTS words (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word TEXT UNIQUE,
+            definition_ja TEXT
+        )''',
+        '''CREATE TABLE IF NOT EXISTS student_answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            word_id INTEGER,
+            score INTEGER,
+            feedback TEXT,
+            example TEXT,
+            attempt_date TEXT,
+            is_wrong INTEGER DEFAULT 0,
+            wrong_count INTEGER DEFAULT 0
+        )'''
+    ]
+    create_writing = [
+        '''CREATE TABLE IF NOT EXISTS writing_prompts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prompt_text TEXT
+        )''',
+        '''CREATE TABLE IF NOT EXISTS writing_answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            prompt_id INTEGER,
+            answer TEXT,
+            score INTEGER,
+            feedback TEXT,
+            correct_example TEXT,
+            attempt_date TEXT,
+            is_wrong INTEGER DEFAULT 0,
+            wrong_count INTEGER DEFAULT 0
+        )'''
+    ]
+    init_db_file(DB_FILE, create_users_words)
+    init_db_file(WRITING_DB, create_writing)
 
 init_all_dbs()
 
@@ -128,7 +108,7 @@ def parse_json_from_text(text):
         return None
 
 # -----------------------
-# 採点関数
+# 採点関数（Gemini 2.5 Flash使用）
 # -----------------------
 def evaluate_answer(word, correct_meaning, user_answer):
     if not HAS_GEMINI:
@@ -147,7 +127,7 @@ JSON形式で出力:
 {{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
 """
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
         if data:
@@ -155,21 +135,6 @@ JSON形式で出力:
     except Exception as e:
         print("Gemini Error:", e)
     return 0, "採点できませんでした。", "", "", ""
-
-def evaluate_writing(prompt_text, answer):
-    if not HAS_GEMINI:
-        score = 80 if len(answer.split()) > 3 else 30
-        return score, "（簡易採点）改善点を確認してください", "This is an example."
-    try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        res = model.generate_content(f"お題:{prompt_text}\n回答:{answer}\nJSONで返して")
-        data = parse_json_from_text(res.text or "")
-        if data:
-            return int(data.get("score",0)), data.get("feedback",""), data.get("correct_example","")
-    except Exception as e:
-        print("Gemini writing error:", e)
-    return 0, "採点中にエラーが発生しました。", ""
-
 # -----------------------
 # DB 操作関数
 # -----------------------
@@ -335,8 +300,13 @@ def health():
     return "OK", 200
 
 # -----------------------
-# ローカル起動
+# Colab 上で Ngrok を使って起動
 # -----------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    from pyngrok import ngrok
+
+    port = 5000
+    public_url = ngrok.connect(port)
+    print("🔥 Ngrok URL:", public_url)
+
+    app.run(port=port)

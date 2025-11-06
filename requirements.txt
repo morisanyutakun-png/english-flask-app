@@ -1,6 +1,5 @@
-Flask
-gunicorn
-google-generativeai==0.8.5
-python-dotenv
-
-
+Flask==2.3.3
+gunicorn==21.2.0
+google-generativeai==0.9.0
+python-dotenv==1.0.1
+ngrok==0.3.1
