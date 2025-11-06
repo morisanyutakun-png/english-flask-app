@@ -5,14 +5,10 @@ import datetime
 import json
 import re
 import os
-from dotenv import load_dotenv
 
 # -----------------------
-# .env 読み込み（ローカルのみ）
+# Flask アプリ
 # -----------------------
-if os.path.exists(".env"):
-    load_dotenv()
-
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_for_local_only")
 
@@ -25,11 +21,7 @@ REPO_WRITING_DB = os.path.join(BASE_DIR, "writing_quiz.db")
 
 TMP_DIR = "/tmp"
 DB_DIR = os.getenv("DB_DIR", TMP_DIR)
-if not os.path.exists(DB_DIR):
-    try:
-        os.makedirs(DB_DIR, exist_ok=True)
-    except Exception as e:
-        print("Warning: couldn't create DB_DIR:", e)
+os.makedirs(DB_DIR, exist_ok=True)
 
 DB_FILE = REPO_DB_FILE if os.path.exists(REPO_DB_FILE) else os.path.join(DB_DIR, "english_learning.db")
 WRITING_DB = REPO_WRITING_DB if os.path.exists(REPO_WRITING_DB) else os.path.join(DB_DIR, "writing_quiz.db")
@@ -148,7 +140,6 @@ JSON形式で出力:
 """
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
         if data:
@@ -322,12 +313,8 @@ def submit_writing():
         flash("サーバーエラーが発生しました。")
         return redirect(url_for("writing_quiz"))
 
-# -----------------------
-# ★追加：rankingルート（エラー防止）
-# -----------------------
 @app.route("/ranking")
 def ranking():
-    # とりあえずプレースホルダとしてindexにリダイレクト
     flash("ランキング機能は準備中です。")
     return redirect(url_for("index"))
 
@@ -336,8 +323,8 @@ def health():
     return "OK", 200
 
 # -----------------------
-# ローカル起動
+# ローカル起動はコメントアウト（Cloud Run では Gunicorn で起動）
 # -----------------------
-#if __name__ == "__main__":
-#    port = int(os.environ.get("PORT", 5000))
-#   app.run(host="0.0.0.0", port=port, debug=True)
+# if __name__ == "__main__":
+#     port = int(os.environ.get("PORT", 5000))
+#     app.run(host="0.0.0.0", port=port, debug=True)
