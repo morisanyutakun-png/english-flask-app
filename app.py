@@ -6,6 +6,7 @@ import json
 import os
 import logging
 import shutil
+import re
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -57,9 +58,13 @@ except Exception as e:
 # ======================================================
 POS_JA = {
     "adjective": "形容詞",
+    "adj": "形容詞",
     "noun": "名詞",
+    "n": "名詞",
     "verb": "動詞",
+    "v": "動詞",
     "adverb": "副詞",
+    "adv": "副詞",
     "pronoun": "代名詞",
     "preposition": "前置詞",
     "conjunction": "接続詞",
@@ -91,7 +96,6 @@ def ensure_word_pos_column(path):
     try:
         with sqlite3.connect(path) as conn:
             c = conn.cursor()
-            # pragma table_info でカラム一覧を得る
             c.execute("PRAGMA table_info(words)")
             cols = [r[1] for r in c.fetchall()]
             if "pos" not in cols:
@@ -174,59 +178,100 @@ def parse_json_from_text(text):
         return {}
 
 # ======================================================
+# 品詞文字列正規化関数
+# ======================================================
+def normalize_pos_string(raw):
+    """
+    raw: 例 "noun, verb" や "noun/verb" や "Noun Verb" など
+    戻り値: "名詞・動詞" のような日本語結合文字列。情報無しなら "その他"
+    """
+    if not raw:
+        return "その他"
+    # 小文字化して分割（カンマ、スラッシュ、全角読点、空白などを区切りとする）
+    parts = re.split(r"[,\u3001/\\\s]+", str(raw).strip().lower())
+    mapped = []
+    for p in parts:
+        if not p:
+            continue
+        # もし p が複数語（like "noun (countable)"), take first token before non-alpha
+        token = re.match(r"[a-z]+", p)
+        key = token.group(0) if token else p
+        ja = POS_JA.get(key, None)
+        if ja:
+            mapped.append(ja)
+        else:
+            # try to map english full words (e.g., "nounplural") fallback to その他 later
+            # skip unknown tokens
+            continue
+    # dedupe while preserving order
+    seen = set()
+    result = []
+    for x in mapped:
+        if x not in seen:
+            seen.add(x)
+            result.append(x)
+    if result:
+        return "・".join(result)
+    return "その他"
+
+# ======================================================
 # 採点関数
 # ======================================================
-def evaluate_answer(word, correct_meaning, user_answer):
+def evaluate_answer(word, correct_meaning, user_answer, pos_from_db=None):
+    """
+    戻り値:
+      score:int,
+      feedback:str,
+      example: { "en": "...", "jp": "..." },
+      pos_ja:str (日本語表記),
+      simple_meaning:str
+    - pos_from_db: DB に入っている英語キー（例: 'noun'）を渡すと非Gemini時に使う。
+    """
+    # 非Geminiの簡易採点（フォールバック）
     if not HAS_GEMINI:
-        score = 100 if correct_meaning in user_answer else 60
-        return (
-            score,
-            "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう"),
-            {
-                "en": f"Example: {word} is used in daily conversation.",
-                "jp": f"{word} は日常会話でよく使われます。",
-            },
-            "名詞",
-            correct_meaning,
-        )
+        score = 100 if (correct_meaning and correct_meaning in user_answer) else 60
+        feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
+        example = {"en": f"{word} の使用例（採点対象外）", "jp": ""}
+        pos_ja = normalize_pos_string(pos_from_db or "other")
+        return score, feedback, example, pos_ja, (correct_meaning or "")
 
+    # Gemini有効時
     try:
         prompt = f"""
 単語: {word}
 正しい意味: {correct_meaning}
 回答: {user_answer}
 
-次の形式でJSONを返してください：
+以下のJSONを必ず返してください（例のフォーマットに従うこと）:
 {{
   "score": 95,
-  "feedback": "自然な意味です。",
+  "feedback": "説明テキスト",
   "example": "He gave his assurance that the project would be completed on time.",
   "example_jp": "彼はそのプロジェクトが予定通り完了すると保証した。",
-  "pos": "noun",
+  "pos": "noun, verb",
   "simple_meaning": "保証、確信、自信"
 }}
+(注意) pos は英語のキーで複数ある場合はカンマ区切りで返してください（例: noun, verb）。
 """
         model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
 
         score = max(0, min(100, int(data.get("score", 0))))
-        example = {
-            "en": data.get("example", f"{word} の使用例（採点対象外）"),
-            "jp": data.get("example_jp", ""),
-        }
+        feedback = data.get("feedback", "") or ""
+        example_en = data.get("example", f"{word} の使用例（採点対象外）")
+        example_jp = data.get("example_jp", "") or ""
+        raw_pos = (data.get("pos") or pos_from_db or "other")
+        pos_ja = normalize_pos_string(raw_pos)
+        simple_meaning = data.get("simple_meaning", correct_meaning or "")
 
-        return (
-            score,
-            data.get("feedback", ""),
-            example,
-            POS_JA.get(data.get("pos", "other").lower(), "その他"),
-            data.get("simple_meaning", correct_meaning),
-        )
-
+        example = {"en": example_en, "jp": example_jp}
+        return score, feedback, example, pos_ja, simple_meaning
     except Exception as e:
         logger.error("Gemini Error: %s", e)
-        return 0, "採点エラー", {"en": f"{word} の使用例", "jp": ""}, "その他", correct_meaning
+        example = {"en": f"{word} の使用例", "jp": ""}
+        pos_ja = normalize_pos_string(pos_from_db or "other")
+        return 0, "採点エラー", example, pos_ja, (correct_meaning or "")
 
 # ======================================================
 # Writing採点
@@ -260,7 +305,6 @@ def get_random_word():
     try:
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
-            # words テーブルに pos カラムがあるかを確認して SELECT を切り替える
             c.execute("PRAGMA table_info(words)")
             cols = [r[1] for r in c.fetchall()]
             if "pos" in cols:
@@ -268,11 +312,9 @@ def get_random_word():
                 row = c.fetchone()
                 if row:
                     return row  # id, word, definition_ja, pos
-            # pos カラム無し or fetch 失敗時のフォールバック
             c.execute("SELECT id, word, definition_ja FROM words ORDER BY RANDOM() LIMIT 1")
             row = c.fetchone()
             if row:
-                # pos がないから None を返す
                 return (row[0], row[1], row[2], None)
             return None
     except Exception as e:
@@ -357,35 +399,49 @@ def api_submit_answer():
         word_id = request.form.get("word_id")
         answer = request.form.get("answer", "")
 
+        # words テーブルから pos も取得する（存在すれば）
+        pos_from_db = None
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
-            c.execute("SELECT word,definition_ja FROM words WHERE id=?", (word_id,))
-            row = c.fetchone()
-            if not row:
-                return jsonify({"error": "単語が見つかりません"}), 404
-            word, correct_meaning = row
+            c.execute("PRAGMA table_info(words)")
+            cols = [r[1] for r in c.fetchall()]
+            if "pos" in cols:
+                c.execute("SELECT word,definition_ja,pos FROM words WHERE id=?", (word_id,))
+                row = c.fetchone()
+                if not row:
+                    return jsonify({"error": "単語が見つかりません"}), 404
+                word, correct_meaning, pos_from_db = row
+            else:
+                c.execute("SELECT word,definition_ja FROM words WHERE id=?", (word_id,))
+                row = c.fetchone()
+                if not row:
+                    return jsonify({"error": "単語が見つかりません"}), 404
+                word, correct_meaning = row
 
-        score, feedback, example, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
+        # 採点（pos_from_db を渡す）
+        score, feedback, example, pos_ja, simple_meaning = evaluate_answer(word, correct_meaning, answer, pos_from_db=pos_from_db)
 
+        # student_answers に例文（英語）を保存（互換性のため）
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute(
                 """INSERT INTO student_answers (user_id,word_id,score,feedback,example,attempt_date)
                    VALUES (?,?,?,?,?,?)""",
-                (user_id, word_id, score, feedback, example["en"], datetime.datetime.utcnow().isoformat()),
+                (user_id, word_id, score, feedback, example.get("en", ""), datetime.datetime.utcnow().isoformat()),
             )
             conn.commit()
 
         avg = get_average_score(user_id)
+        # フロント向け返却（正解意味は渡さない設計）
         return jsonify({
             "score": score,
             "feedback": feedback,
-            "example_en": example["en"],
-            "example_jp": example["jp"],
-            "pos": pos,
+            "example_en": example.get("en", ""),
+            "example_jp": example.get("jp", ""),
+            "pos": pos_ja,
             "simple_meaning": simple_meaning,
             "average_score": avg,
-            "your_answer": answer
+            "user_answer": answer
         })
 
     except Exception as e:
@@ -401,7 +457,6 @@ def index():
     if "user_id" not in session:
         return redirect(url_for("login"))
 
-    # username, is_guest の値をテンプレートへ渡す
     return render_template(
         "index.html",
         username=session.get("username", "ゲスト"),
