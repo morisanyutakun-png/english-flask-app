@@ -514,14 +514,18 @@ def submit_writing():
         is_guest = session.get("is_guest", True)
 
         # --- 採点処理（仮ロジック） ---
-        # 実際にはAIスコアリングや比較を行う部分
         if not user_answer:
             score = 0
             feedback = "回答が入力されていません。"
         else:
-            # 例としてスコアを簡単に生成（デモ用）
-            score = min(100, max(0, len(user_answer) * 10))
-            feedback = "全体的に良く書けています。もう少し自然な表現を意識しましょう。"
+            # 仮のスコア算出（1文字あたり2点、上限100）
+            score = min(100, len(user_answer) * 2)
+            if score >= 90:
+                feedback = "非常に良く書けています！文法も自然で読みやすいです。"
+            elif score >= 60:
+                feedback = "良い回答です。少しだけ自然な言い回しを意識しましょう。"
+            else:
+                feedback = "改善の余地があります。基本的な文法と語彙を見直してみましょう。"
 
         # --- 正解例や意味など（サンプル） ---
         correct_example = "My greatest wish is to see the world."
@@ -529,11 +533,12 @@ def submit_writing():
 
         # --- テンプレートへ渡す ---
         return render_template(
-            "result.html",
+            "writing_result.html",  # ← result.html → writing_result.html に変更
             score=score,
             prompt=prompt or "No prompt",
             answer=user_answer or "（回答なし）",
             correct_example=correct_example,
+            correct_meaning=correct_meaning,
             feedback=feedback,
             user_id=user_id,
             prompt_id=prompt_id,
@@ -542,7 +547,6 @@ def submit_writing():
         )
 
     except Exception as e:
-        # --- エラー時にログ出力 ---
         import traceback
         print("=== submit_writing ERROR ===")
         print(traceback.format_exc())
