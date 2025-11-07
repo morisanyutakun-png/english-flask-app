@@ -1,5 +1,4 @@
 # studyST/app.py
-# studyST/app.py
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 import sqlite3
 import datetime
@@ -139,7 +138,6 @@ def evaluate_answer(word, correct_meaning, user_answer):
         example = f"Example: {word} is used like ..."
         return score, feedback, example, "", correct_meaning
 
-    # Gemini に 0～100 のスコアを必ず返させるプロンプト
     prompt = f"""
 あなたは英語教師です。
 単語: {word}
@@ -155,7 +153,6 @@ def evaluate_answer(word, correct_meaning, user_answer):
         data = parse_json_from_text(res.text or "")
         if data:
             score = int(data.get("score", 0))
-            # スコアを0-100に補正
             score = max(0, min(100, score))
             return score, data.get("feedback",""), data.get("example",""), data.get("pos",""), data.get("simple_meaning","")
     except Exception as e:
@@ -193,6 +190,8 @@ def get_random_word():
 
 def get_average_score(user_id):
     try:
+        if not user_id:
+            return 0
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute("SELECT AVG(score) FROM student_answers WHERE user_id=?", (user_id,))
@@ -245,12 +244,16 @@ def api_submit_answer():
             conn.commit()
             logger.info("Answer recorded for user_id=%s, word_id=%s, score=%s", user_id, word_id, score)
 
+        # 平均スコアを追加
+        average_score = get_average_score(user_id)
+
         return jsonify({
             "score": score,
             "feedback": feedback,
             "example": example,
             "pos": pos,
             "simple_meaning": simple_meaning,
+            "average_score": average_score  # ← ここを追加
         })
     except Exception as e:
         logger.exception("api_submit_answer error")
