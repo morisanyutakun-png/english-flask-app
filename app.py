@@ -334,7 +334,13 @@ def api_submit_answer():
 def index():
     if "user_id" not in session:
         return redirect(url_for("login"))
-    return render_template("index.html", username=session.get("username", "ゲスト"))
+
+    # username, is_guest の値をテンプレートへ渡す
+    return render_template(
+        "index.html",
+        username=session.get("username", "ゲスト"),
+        is_guest=session.get("is_guest", False)
+    )
 
 @app.route("/word_quiz")
 def word_quiz():
