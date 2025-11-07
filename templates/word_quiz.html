@@ -61,6 +61,7 @@
     <div class="pos-meaning-box" id="pos-meaning-box"></div>
     <div class="example-box" id="example-box" style="display:none;">
       <p class="label-advice">📖 例文:</p>
+      <!-- 文ごとに改行 -->
       <p id="example-sentence"></p>
       <p id="example-translation" style="color:#555; margin-top:4px;"></p>
       <button class="tts-btn" id="tts-example-btn">🎵 英語を再生</button>
@@ -174,8 +175,12 @@ document.addEventListener("DOMContentLoaded", ()=>{
       if(data.example){
         const exampleBox=document.getElementById('example-box');
         exampleBox.style.display='block';
-        document.getElementById('example-sentence').textContent=data.example;
+        // ------------------------------
+        // 文ごとに改行して表示する処理
+        const sentences = data.example.split(/(?<=[。.!?])/); // 句点やピリオドで分割
+        document.getElementById('example-sentence').innerHTML = sentences.map(s => s.trim()).filter(Boolean).join('<br>');
         document.getElementById('example-translation').textContent=data.example_ja||'';
+        // ------------------------------
       }
 
     }catch(err){
