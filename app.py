@@ -1,4 +1,5 @@
 # studyST/app.py
+# studyST/app.py
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 import sqlite3
 import datetime
@@ -115,7 +116,7 @@ def init_all_dbs():
 init_all_dbs()
 
 # -----------------------
-# JSON 抽出ユーティリティ（修正版）
+# JSON 抽出ユーティリティ
 # -----------------------
 def parse_json_from_text(text):
     """最初のJSONブロックを抽出してパース"""
@@ -138,13 +139,14 @@ def evaluate_answer(word, correct_meaning, user_answer):
         example = f"Example: {word} is used like ..."
         return score, feedback, example, "", correct_meaning
 
+    # Gemini に 0～100 のスコアを必ず返させるプロンプト
     prompt = f"""
 あなたは英語教師です。
 単語: {word}
 正しい意味（日本語）: {correct_meaning}
 学習者の回答（日本語）: {user_answer}
 
-JSON形式で出力:
+以下のJSON形式で必ず返してください（scoreは0-100の整数）:
 {{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
 """
     try:
@@ -152,7 +154,10 @@ JSON形式で出力:
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
         if data:
-            return int(data.get("score",0)), data.get("feedback",""), data.get("example",""), data.get("pos",""), data.get("simple_meaning","")
+            score = int(data.get("score", 0))
+            # スコアを0-100に補正
+            score = max(0, min(100, score))
+            return score, data.get("feedback",""), data.get("example",""), data.get("pos",""), data.get("simple_meaning","")
     except Exception as e:
         logger.error("Gemini Error: %s", e)
     return 0, "採点できませんでした。", "", "", ""
@@ -166,7 +171,9 @@ def evaluate_writing(prompt_text, answer):
         res = model.generate_content(f"お題:{prompt_text}\n回答:{answer}\nJSONで返して")
         data = parse_json_from_text(res.text or "")
         if data:
-            return int(data.get("score",0)), data.get("feedback",""), data.get("correct_example","")
+            score = int(data.get("score", 0))
+            score = max(0, min(100, score))
+            return score, data.get("feedback",""), data.get("correct_example","")
     except Exception as e:
         logger.error("Gemini writing error: %s", e)
     return 0, "採点中にエラーが発生しました。", ""
@@ -319,7 +326,7 @@ def writing_quiz():
                            is_guest=session.get("is_guest", False))
 
 # -----------------------
-# 新規追加：ランキング画面
+# ランキング画面
 # -----------------------
 @app.route("/ranking")
 def ranking():
