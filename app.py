@@ -245,21 +245,19 @@ def register():
         username = request.form.get("username")
         password = request.form.get("password")
         if not username or not password:
-            return render_template("login.html", error="ユーザー名とパスワードは必須です")
+            return render_template("register.html", error="ユーザー名とパスワードは必須です")
         hashed = generate_password_hash(password)
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 c = conn.cursor()
                 c.execute("INSERT INTO users (username,password) VALUES (?,?)", (username, hashed))
                 conn.commit()
-                # 登録後に自動ログイン
-                session["user_id"] = c.lastrowid
-                session["username"] = username
-                session["is_guest"] = False
-                return redirect(url_for("index"))
+                flash("登録完了！ログインしてください")
+                return redirect(url_for("login"))
         except sqlite3.IntegrityError:
-            return render_template("login.html", error="そのユーザー名は既に使われています")
-    return render_template("login.html")
+            return render_template("register.html", error="そのユーザー名は既に使われています")
+    # GET リクエスト時は register.html を表示
+    return render_template("register.html")
 
 
 # -----------------------
