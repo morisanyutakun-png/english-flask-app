@@ -57,7 +57,18 @@
     <div class="score-box">
       <p class="label-score">あなたのスコア:</p>
       <p class="score-text" id="score-text"></p>
+    <!-- ✅ 自分の回答と正解の表示カード -->
+    <div id="user-vs-correct" style="margin:20px 0; display:none;">
+      <div class="card accent-green">
+        <strong>あなたの回答:</strong>
+        <div id="user-answer" style="font-size:1.1rem; margin-top:5px;"></div>
+      </div>
+      <div class="card accent-blue">
+        <strong>正解の意味:</strong>
+        <div id="correct-answer" style="font-size:1.1rem; margin-top:5px;"></div>
+      </div>
     </div>
+    <!-- ✅ ここまで追加 -->
     <div class="pos-meaning-box" id="pos-meaning-box"></div>
     <div class="example-box" id="example-box" style="display:none;">
       <p class="label-advice">📖 例文:</p>
