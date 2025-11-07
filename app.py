@@ -176,50 +176,57 @@ def parse_json_from_text(text):
 # ======================================================
 # 採点関数
 # ======================================================
-def evaluate_answer(word, correct_meaning, user_answer, pos_from_db=None):
-    """
-    戻り値:
-      score:int,
-      feedback:str,
-      example:str,
-      pos_ja:str (日本語表記),
-      simple_meaning:str
-    - pos_from_db は英語キー（例: 'noun'）が入っている想定（DBに格納されている場合）。
-    - Geminiが有効な場合、Geminiの返す pos を優先し、POS_JA マップへ変換する。
-    - Gemini無効時は pos_from_db を参照して日本語品詞を返す（無ければ 'その他'）。
-    """
-    # Gemini が無い場合の簡易採点
+def evaluate_answer(word, correct_meaning, user_answer):
     if not HAS_GEMINI:
-        score = 100 if (correct_meaning and correct_meaning in user_answer) else 60
-        feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
-        example = f"{word} の使用例（採点対象外）"
-        pos_ja = POS_JA.get((pos_from_db or "other").lower(), "その他")
-        return score, feedback, example, pos_ja, correct_meaning
+        score = 100 if correct_meaning in user_answer else 60
+        return (
+            score,
+            "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう"),
+            {
+                "en": f"Example: {word} is used in daily conversation.",
+                "jp": f"{word} は日常会話でよく使われます。",
+            },
+            "名詞",
+            correct_meaning,
+        )
 
-    # Gemini 有効時
     try:
         prompt = f"""
 単語: {word}
 正しい意味: {correct_meaning}
 回答: {user_answer}
-JSON形式で返答してください。
-{{"score":80,"feedback":"...","example":"...","pos":"noun","simple_meaning":"...","example_ja":"..."}}
+
+次の形式でJSONを返してください：
+{{
+  "score": 95,
+  "feedback": "自然な意味です。",
+  "example": "He gave his assurance that the project would be completed on time.",
+  "example_jp": "彼はそのプロジェクトが予定通り完了すると保証した。",
+  "pos": "noun",
+  "simple_meaning": "保証、確信、自信"
+}}
 """
         model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
+
         score = max(0, min(100, int(data.get("score", 0))))
-        feedback = data.get("feedback", "")
-        example = data.get("example", f"{word} の使用例（採点対象外）")
-        # pos は英語キーで返ることを想定。なければ DB のものを使い、最終的に日本語に変換する。
-        pos_en = (data.get("pos") or pos_from_db or "other").lower()
-        pos_ja = POS_JA.get(pos_en, "その他")
-        simple_meaning = data.get("simple_meaning", correct_meaning)
-        return score, feedback, example, pos_ja, simple_meaning
+        example = {
+            "en": data.get("example", f"{word} の使用例（採点対象外）"),
+            "jp": data.get("example_jp", ""),
+        }
+
+        return (
+            score,
+            data.get("feedback", ""),
+            example,
+            POS_JA.get(data.get("pos", "other").lower(), "その他"),
+            data.get("simple_meaning", correct_meaning),
+        )
+
     except Exception as e:
         logger.error("Gemini Error: %s", e)
-        pos_ja = POS_JA.get((pos_from_db or "other").lower(), "その他")
-        return 0, "採点エラー", f"{word} の使用例", pos_ja, correct_meaning
+        return 0, "採点エラー", {"en": f"{word} の使用例", "jp": ""}, "その他", correct_meaning
 
 # ======================================================
 # Writing採点
@@ -352,50 +359,35 @@ def api_submit_answer():
 
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
-            # words テーブルに pos カラムがあるかを確認して SELECT を切り替える
-            c.execute("PRAGMA table_info(words)")
-            cols = [r[1] for r in c.fetchall()]
-            if "pos" in cols:
-                c.execute("SELECT word, definition_ja, pos FROM words WHERE id=?", (word_id,))
-                row = c.fetchone()
-                if not row:
-                    return jsonify({"error": "単語が見つかりません"}), 404
-                word, correct_meaning, pos_from_db = row
-            else:
-                c.execute("SELECT word, definition_ja FROM words WHERE id=?", (word_id,))
-                row = c.fetchone()
-                if not row:
-                    return jsonify({"error": "単語が見つかりません"}), 404
-                word, correct_meaning = row
-                pos_from_db = None
+            c.execute("SELECT word,definition_ja FROM words WHERE id=?", (word_id,))
+            row = c.fetchone()
+            if not row:
+                return jsonify({"error": "単語が見つかりません"}), 404
+            word, correct_meaning = row
 
-        # 採点（pos_from_db を渡しておく）
-        score, feedback, example, pos_ja, simple_meaning = evaluate_answer(word, correct_meaning, answer, pos_from_db=pos_from_db)
+        score, feedback, example, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
 
-        # DB に記録（例: student_answers）
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute(
                 """INSERT INTO student_answers (user_id,word_id,score,feedback,example,attempt_date)
                    VALUES (?,?,?,?,?,?)""",
-                (user_id, word_id, score, feedback, example, datetime.datetime.utcnow().isoformat()),
+                (user_id, word_id, score, feedback, example["en"], datetime.datetime.utcnow().isoformat()),
             )
             conn.commit()
 
         avg = get_average_score(user_id)
-
-        # 返却 JSON（フロント向けに user_answer, correct_meaning, pos を含める）
         return jsonify({
             "score": score,
             "feedback": feedback,
-            "example": example or "（例文なし）",
-            "pos": pos_ja,                     # 日本語表記の品詞（例: 名詞）
-            "simple_meaning": simple_meaning or correct_meaning or "",
+            "example_en": example["en"],
+            "example_jp": example["jp"],
+            "pos": pos,
+            "simple_meaning": simple_meaning,
             "average_score": avg,
-            "user_answer": answer,
-            # correct_meaning はフロント側で消す/表示しないは可能なのでここでは渡す（必要なら消してください）
-            "correct_meaning": correct_meaning or ""
+            "your_answer": answer
         })
+
     except Exception as e:
         logger.exception("api_submit_answer error")
         return jsonify({"error": "internal server error"}), 500
