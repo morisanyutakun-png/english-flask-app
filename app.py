@@ -1,9 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 import sqlite3
 import datetime
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
-import sqlite3
-import datetime
 import json
 import os
 import logging
@@ -30,7 +27,6 @@ logger = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DB_FILE = os.path.join(BASE_DIR, "english_learning.db")
 REPO_WRITING_DB = os.path.join(BASE_DIR, "writing_quiz.db")
-
 TMP_DIR = "/tmp"
 DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
 WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
@@ -159,12 +155,9 @@ def parse_json_from_text(text):
         return {}
 
 # -----------------------
-# 採点関数
+# 採点関数（例文は評価対象外、単語意味は短文、スコア100点満点）
 # -----------------------
 def evaluate_answer(word, correct_meaning, user_answer):
-    """
-    Gemini を使って動的に採点。例文は採点対象外、品詞も返す。
-    """
     if not HAS_GEMINI:
         score = 100 if user_answer.strip() and correct_meaning in user_answer else 60
         feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
@@ -179,10 +172,12 @@ def evaluate_answer(word, correct_meaning, user_answer):
 学習者の回答: {user_answer}
 
 指示:
-- 学習者の回答の意味が正しいかだけを採点してください。
-- 例文は採点に含めないでください。
-- 品詞を英語で返してください。
-- JSON形式で出力してください:
+- 学習者の回答が正しいかを評価してください。
+- 例文は採点に含めず、空または固定文字列にしてください。
+- 単語の意味は短いフレーズで返してください（文章で説明しない）。
+- 品詞は英語で返してください。
+- スコアは必ず0〜100の整数で返してください。
+- JSON形式で出力:
 {{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
 """
         model = genai.GenerativeModel("gemini-2.5-flash")
