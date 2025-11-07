@@ -252,11 +252,15 @@ def register():
                 c = conn.cursor()
                 c.execute("INSERT INTO users (username,password) VALUES (?,?)", (username, hashed))
                 conn.commit()
-                flash("登録完了！ログインしてください")
-                return redirect(url_for("login"))
+                # 登録後に自動ログイン
+                session["user_id"] = c.lastrowid
+                session["username"] = username
+                session["is_guest"] = False
+                return redirect(url_for("index"))
         except sqlite3.IntegrityError:
             return render_template("login.html", error="そのユーザー名は既に使われています")
     return render_template("login.html")
+
 
 # -----------------------
 # API ルート
