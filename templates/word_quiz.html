@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>英単語クイズ</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=34">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=35">
   <style>
     body { font-family:"Hiragino Sans","Noto Sans JP",sans-serif; background: linear-gradient(135deg,#f8fafc,#eef2ff); margin:0; padding:0; color:#333; }
     .container { max-width:650px; margin:50px auto; text-align:center; background:white; border-radius:20px; box-shadow:0 10px 25px rgba(0,0,0,0.1); padding:30px 20px; }
@@ -53,36 +53,46 @@
     </div>
     <input type="hidden" id="word-id" value="{{ word_id or 0 }}">
   </section>
+
+  <!-- フィードバック領域 -->
   <section class="feedback-box" id="feedback-box" style="display:none;">
     <div class="score-box">
       <p class="label-score">あなたのスコア:</p>
       <p class="score-text" id="score-text"></p>
-    <!-- ✅ 自分の回答と正解の表示カード -->
-    <div id="user-vs-correct" style="margin:20px 0; display:none;">
+    </div>
+
+    <!-- あなたの回答と正解 -->
+    <div id="user-vs-correct" style="margin:20px 0;">
       <div class="card accent-green">
         <strong>あなたの回答:</strong>
-        <div id="user-answer" style="font-size:1.1rem; margin-top:5px;"></div>
+        <div id="user-answer" style="font-size:1.1rem; margin-top:5px;">（未回答）</div>
       </div>
       <div class="card accent-blue">
         <strong>正解の意味:</strong>
-        <div id="correct-answer" style="font-size:1.1rem; margin-top:5px;"></div>
+        <div id="correct-answer" style="font-size:1.1rem; margin-top:5px;">（正解情報なし）</div>
       </div>
     </div>
-    <!-- ✅ ここまで追加 -->
+
+    <!-- 品詞と意味 -->
     <div class="pos-meaning-box" id="pos-meaning-box"></div>
-    <div class="example-box" id="example-box" style="display:none;">
+
+    <!-- 例文 -->
+    <div class="example-box" id="example-box">
       <p class="label-advice">📖 例文:</p>
-      <!-- 文ごとに改行 -->
-      <p id="example-sentence"></p>
+      <p id="example-sentence">（例文なし）</p>
       <p id="example-translation" style="color:#555; margin-top:4px;"></p>
       <button class="tts-btn" id="tts-example-btn">🎵 英語を再生</button>
     </div>
+
+    <!-- アドバイス -->
     <div class="advice-box">
       <p class="label-advice">🧭 アドバイス:</p>
       <p class="advice-text" id="feedback-text"></p>
     </div>
+
     <div id="next-buttons" style="margin-top:15px;"></div>
   </section>
+
   <nav class="nav-links">
     <a href="{{ url_for('index') }}">トップに戻る</a>
     {% if current_user and current_user.is_authenticated %}
@@ -93,30 +103,31 @@
 
 <script>
 document.addEventListener("DOMContentLoaded", ()=>{
-  const submitBtn = document.getElementById('submit-btn');
-  const answerInput = document.getElementById('answer');
-  const wordId = document.getElementById('word-id').value;
-  const progressContainer = document.getElementById('progress-container');
-  const progressBar = document.getElementById('progress-bar');
-  const progressText = document.getElementById('progress-text');
+  const submitBtn=document.getElementById('submit-btn');
+  const answerInput=document.getElementById('answer');
+  const wordId=document.getElementById('word-id').value;
+  const progressContainer=document.getElementById('progress-container');
+  const progressBar=document.getElementById('progress-bar');
+  const progressText=document.getElementById('progress-text');
 
   let voices=[];
-  function loadVoices(){ voices = speechSynthesis.getVoices(); }
-  speechSynthesis.onvoiceschanged = loadVoices;
+  function loadVoices(){ voices=speechSynthesis.getVoices(); }
+  speechSynthesis.onvoiceschanged=loadVoices;
   loadVoices();
+
   function playEnglishTTS(text){
     if(!text) return;
-    const utter = new SpeechSynthesisUtterance(text);
+    const utter=new SpeechSynthesisUtterance(text);
     utter.lang='en-US'; utter.rate=0.95; utter.pitch=1.0;
-    const enVoice = voices.find(v=>v.lang.startsWith('en')&&v.name.includes('Google'))||voices.find(v=>v.lang.startsWith('en'));
+    const enVoice=voices.find(v=>v.lang.startsWith('en')&&v.name.includes('Google'))||voices.find(v=>v.lang.startsWith('en'));
     if(enVoice) utter.voice=enVoice;
     speechSynthesis.speak(utter);
   }
 
-  document.getElementById('tts-word-btn')?.addEventListener('click', ()=>playEnglishTTS(document.querySelector('#word .highlight')?.textContent));
-  document.getElementById('tts-example-btn')?.addEventListener('click', ()=>playEnglishTTS(document.getElementById('example-sentence')?.textContent));
+  document.getElementById('tts-word-btn')?.addEventListener('click',()=>playEnglishTTS(document.querySelector('#word .highlight')?.textContent));
+  document.getElementById('tts-example-btn')?.addEventListener('click',()=>playEnglishTTS(document.getElementById('example-sentence')?.textContent));
 
-  submitBtn.addEventListener('click', async ()=>{
+  submitBtn.addEventListener('click',async ()=>{
     const answer=answerInput.value.trim();
     if(!answer) return alert('回答を入力してください');
 
@@ -170,28 +181,37 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
       document.getElementById('average-score').textContent=data.average_score ?? 0;
 
+      // あなたの回答と正解
+      document.getElementById('user-answer').textContent=data.user_answer || answer || '（未回答）';
+      document.getElementById('correct-answer').textContent=data.correct_answer || '（正解情報なし）';
+
+      // 品詞＋意味
       const posMeaningBox=document.getElementById('pos-meaning-box');
       posMeaningBox.innerHTML='';
-      if(data.pos) posMeaningBox.innerHTML+=`<div class="card accent-blue"><div>📘 品詞</div><div>${data.pos}</div></div>`;
-      if(data.simple_meaning) posMeaningBox.innerHTML+=`<div class="card accent-green"><div>💡 意味</div><div>${data.simple_meaning}</div></div>`;
+      posMeaningBox.innerHTML+=`<div class="card accent-blue"><div>📘 品詞</div><div>${data.pos || '（情報なし）'}</div></div>`;
+      posMeaningBox.innerHTML+=`<div class="card accent-green"><div>💡 意味</div><div>${data.simple_meaning || '（意味情報なし）'}</div></div>`;
 
+      // スコア
       if(data.score!==undefined){
         const scoreEl=document.getElementById('score-text');
         scoreEl.textContent=`${data.score} 点`;
         scoreEl.classList.add('score-animate');
       }
 
+      // アドバイス
       document.getElementById('feedback-text').innerHTML=(data.feedback||'').replace(/\n/g,'<br>');
 
-      if(data.example){
-        const exampleBox=document.getElementById('example-box');
-        exampleBox.style.display='block';
-        // ------------------------------
-        // 文ごとに改行して表示する処理（改良版）
-        const sentences = data.example.split(/(?<=[。.!?])\s+/); // 句点やピリオドの後の空白で分割
-        document.getElementById('example-sentence').innerHTML = sentences.map(s => s.trim()).filter(Boolean).join('<br>');
-        document.getElementById('example-translation').textContent = data.example_ja || '';
-
+      // 例文
+      const exampleBox=document.getElementById('example-box');
+      const example=data.example || '';
+      const exampleJa=data.example_ja || '';
+      if(example){
+        const sentences=example.split(/(?<=[。.!?])\s+/);
+        document.getElementById('example-sentence').innerHTML=sentences.map(s=>s.trim()).filter(Boolean).join('<br>');
+        document.getElementById('example-translation').textContent=exampleJa;
+      }else{
+        document.getElementById('example-sentence').textContent='（例文なし）';
+        document.getElementById('example-translation').textContent='';
       }
 
     }catch(err){

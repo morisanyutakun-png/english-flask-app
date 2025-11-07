@@ -315,13 +315,15 @@ def api_submit_answer():
             conn.commit()
         avg = get_average_score(user_id)
         return jsonify({
-            "score": score,
-            "feedback": feedback,
-            "example": example,
-            "pos": pos,
-            "simple_meaning": simple_meaning,
-            "average_score": avg
-        })
+    "score": score,
+    "feedback": feedback,
+    "example": example or "（例文なし）",
+    "pos": pos,
+    "simple_meaning": simple_meaning,
+    "average_score": avg,
+    "your_answer": answer,                # 👈 あなたの回答を追加
+    "correct_meaning": correct_meaning    # 👈 正しい意味を追加
+})
     except Exception as e:
         logger.exception("api_submit_answer error")
         return jsonify({"error": "internal server error"}), 500
