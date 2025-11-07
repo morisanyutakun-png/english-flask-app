@@ -333,9 +333,16 @@ def api_submit_writing():
 @app.route("/")
 @app.route("/index")
 def index():
-    return render_template("index.html",
-                           username=session.get("username","ゲスト"),
-                           is_guest=session.get("is_guest",False))
+    # ログインしていない場合は login.html にリダイレクト
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    
+    return render_template(
+        "index.html",
+        username=session.get("username", "ゲスト"),
+        is_guest=session.get("is_guest", False)
+    )
+
 
 @app.route("/word_quiz")
 def word_quiz():
