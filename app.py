@@ -139,6 +139,7 @@ def evaluate_answer(word, correct_meaning, user_answer):
         return score, feedback, example, "", correct_meaning
     try:
         prompt = f"""
+以下の情報のみを元に採点して。例文は考慮しないこと。
 単語: {word}
 正しい意味: {correct_meaning}
 学習者の回答: {user_answer}
