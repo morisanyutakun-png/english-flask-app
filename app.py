@@ -119,7 +119,6 @@ init_all_dbs()
 # JSON 抽出ユーティリティ
 # -----------------------
 def parse_json_from_text(text):
-    """最初のJSONブロックを抽出してパース"""
     try:
         start = text.index("{")
         end = text.rindex("}") + 1
@@ -138,17 +137,15 @@ def evaluate_answer(word, correct_meaning, user_answer):
         feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
         example = f"Example: {word} is used like ..."
         return score, feedback, example, "", correct_meaning
-
-    prompt = f"""
-あなたは英語教師です。
+    try:
+        prompt = f"""
 単語: {word}
-正しい意味（日本語）: {correct_meaning}
-学習者の回答（日本語）: {user_answer}
+正しい意味: {correct_meaning}
+学習者の回答: {user_answer}
 
-以下のJSON形式で必ず返してください（scoreは0-100の整数）:
+以下のJSON形式で返してください:
 {{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
 """
-    try:
         model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
@@ -169,7 +166,7 @@ def evaluate_writing(prompt_text, answer):
         res = model.generate_content(f"お題:{prompt_text}\n回答:{answer}\nJSONで返して")
         data = parse_json_from_text(res.text or "")
         if data:
-            score = int(data.get("score", 0))
+            score = int(data.get("score",0))
             score = max(0, min(100, score))
             return score, data.get("feedback",""), data.get("correct_example","")
     except Exception as e:
@@ -210,7 +207,7 @@ def get_random_prompt():
             c.execute("SELECT id, prompt_text FROM writing_prompts ORDER BY RANDOM() LIMIT 1")
             row = c.fetchone()
             if row:
-                return {"id":row[0], "text":row[1]}
+                return {"id": row[0], "text": row[1]}
     except Exception as e:
         logger.error("DB Error get_random_prompt: %s", e)
     return {"id": None, "text": "お題が見つかりませんでした"}
@@ -218,14 +215,14 @@ def get_random_prompt():
 # -----------------------
 # ユーザ認証ルート
 # -----------------------
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
         username = request.form.get("username")
         password = request.form.get("password")
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
-            c.execute("SELECT id, password FROM users WHERE username=?", (username,))
+            c.execute("SELECT id,password FROM users WHERE username=?", (username,))
             row = c.fetchone()
             if row and check_password_hash(row[1], password):
                 session["user_id"] = row[0]
@@ -242,7 +239,7 @@ def guest_login():
     session["is_guest"] = True
     return redirect(url_for("index"))
 
-@app.route("/register", methods=["GET", "POST"])
+@app.route("/register", methods=["GET","POST"])
 def register():
     if request.method == "POST":
         username = request.form.get("username")
@@ -253,7 +250,7 @@ def register():
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 c = conn.cursor()
-                c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed))
+                c.execute("INSERT INTO users (username,password) VALUES (?,?)", (username, hashed))
                 conn.commit()
                 flash("登録完了！ログインしてください")
                 return redirect(url_for("login"))
@@ -262,37 +259,30 @@ def register():
     return render_template("login.html")
 
 # -----------------------
-# API ルーティング
+# API ルート
 # -----------------------
 @app.route("/api/submit_answer", methods=["POST"])
 def api_submit_answer():
     try:
-        user_id = session.get("user_id", 0)
+        user_id = session.get("user_id",0)
         word_id = request.form.get("word_id")
-        answer = request.form.get("answer", "")
-
+        answer = request.form.get("answer","")
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
-            c.execute("SELECT word, definition_ja FROM words WHERE id=?", (word_id,))
+            c.execute("SELECT word,definition_ja FROM words WHERE id=?",(word_id,))
             row = c.fetchone()
             if not row:
-                logger.warning("単語が見つかりません: %s", word_id)
-                return jsonify({"error":"単語が見つかりません"}), 404
+                return jsonify({"error":"単語が見つかりません"}),404
             word, correct_meaning = row
-
         score, feedback, example, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
-
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute("""
                 INSERT INTO student_answers (user_id, word_id, score, feedback, example, attempt_date)
                 VALUES (?,?,?,?,?,?)
-            """, (user_id, word_id, score, feedback, example, datetime.datetime.now().isoformat()))
+            """,(user_id, word_id, score, feedback, example, datetime.datetime.now().isoformat()))
             conn.commit()
-            logger.info("Answer recorded for user_id=%s, word_id=%s, score=%s", user_id, word_id, score)
-
         average_score = get_average_score(user_id)
-
         return jsonify({
             "score": score,
             "feedback": feedback,
@@ -303,54 +293,49 @@ def api_submit_answer():
         })
     except Exception as e:
         logger.exception("api_submit_answer error")
-        return jsonify({"error": "internal server error"}), 500
+        return jsonify({"error":"internal server error"}),500
 
 @app.route("/api/submit_writing", methods=["POST"])
 def api_submit_writing():
     try:
-        user_id = request.form.get("user_id", 0)
+        user_id = request.form.get("user_id",0)
         prompt_id = request.form.get("prompt_id")
-        answer = request.form.get("answer", "")
-
+        answer = request.form.get("answer","")
         with sqlite3.connect(WRITING_DB) as conn:
             c = conn.cursor()
-            c.execute("SELECT prompt_text FROM writing_prompts WHERE id=?", (prompt_id,))
+            c.execute("SELECT prompt_text FROM writing_prompts WHERE id=?",(prompt_id,))
             row = c.fetchone()
             prompt_text = row[0] if row else "お題が取得できませんでした"
-
         score, feedback, correct_example = evaluate_writing(prompt_text, answer)
-
         with sqlite3.connect(WRITING_DB) as conn:
             c = conn.cursor()
             c.execute("""
-                INSERT INTO writing_answers (user_id, prompt_id, answer, score, feedback, correct_example, attempt_date)
+                INSERT INTO writing_answers (user_id,prompt_id,answer,score,feedback,correct_example,attempt_date)
                 VALUES (?,?,?,?,?,?,?)
-            """, (user_id, prompt_id, answer, score, feedback, correct_example, datetime.datetime.now().isoformat()))
+            """,(user_id,prompt_id,answer,score,feedback,correct_example,datetime.datetime.now().isoformat()))
             conn.commit()
-            logger.info("Writing recorded for user_id=%s, prompt_id=%s, score=%s", user_id, prompt_id, score)
-
         return jsonify({
-            "score": score,
-            "feedback": feedback,
-            "correct_example": correct_example
+            "score":score,
+            "feedback":feedback,
+            "correct_example":correct_example
         })
     except Exception as e:
         logger.exception("api_submit_writing error")
-        return jsonify({"error":"internal server error"}), 500
+        return jsonify({"error":"internal server error"}),500
 
 # -----------------------
-# 従来ルーティング（画面表示用）
+# 画面ルート
 # -----------------------
 @app.route("/")
 @app.route("/index")
 def index():
     return render_template("index.html",
                            username=session.get("username","ゲスト"),
-                           is_guest=session.get("is_guest", False))
+                           is_guest=session.get("is_guest",False))
 
 @app.route("/word_quiz")
 def word_quiz():
-    user_id = session.get("user_id", 0)
+    user_id = session.get("user_id",0)
     word_data = get_random_word()
     if not word_data:
         flash("単語が登録されていません。")
@@ -361,22 +346,19 @@ def word_quiz():
                            word=word,
                            average_score=get_average_score(user_id),
                            username=session.get("username","ゲスト"),
-                           is_guest=session.get("is_guest", False))
+                           is_guest=session.get("is_guest",False))
 
 @app.route("/writing_quiz")
 def writing_quiz():
-    user_id = session.get("user_id", 0)
+    user_id = session.get("user_id",0)
     prompt = get_random_prompt()
     return render_template("writing_quiz.html",
                            prompt=prompt["text"],
                            prompt_id=prompt["id"],
                            user_id=user_id,
                            username=session.get("username","ゲスト"),
-                           is_guest=session.get("is_guest", False))
+                           is_guest=session.get("is_guest",False))
 
-# -----------------------
-# ランキング画面
-# -----------------------
 @app.route("/ranking")
 def ranking():
     try:
@@ -394,15 +376,14 @@ def ranking():
     except Exception as e:
         logger.error("DB Error ranking: %s", e)
         ranking_data = []
-
     return render_template("ranking.html",
                            ranking=ranking_data,
                            username=session.get("username","ゲスト"),
-                           is_guest=session.get("is_guest", False))
+                           is_guest=session.get("is_guest",False))
 
 @app.route("/health")
 def health():
-    return "OK", 200
+    return "OK",200
 
 @app.route("/logout")
 def logout():
@@ -412,7 +393,7 @@ def logout():
 # -----------------------
 # ローカル起動
 # -----------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
+if __name__=="__main__":
+    port = int(os.environ.get("PORT",8080))
     logger.info(f"🚀 Starting local Flask server on port {port}")
     app.run(host="0.0.0.0", port=port, debug=True)
