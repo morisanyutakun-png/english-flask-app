@@ -388,7 +388,7 @@ def health():
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("index"))
+    return redirect(url_for("login"))  # index ではなく login にリダイレクト
 
 # -----------------------
 # ローカル起動
