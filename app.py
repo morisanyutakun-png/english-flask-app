@@ -490,8 +490,64 @@ def word_quiz():
 @app.route("/writing_quiz")
 def writing_quiz():
     user_id = session.get("user_id", 0)
+    # review フラグを URL パラメータから受け取れるように（例: /writing_quiz?review=1）
+    review_mode = request.args.get("review") == "1"
     prompt = get_random_prompt()
-    return render_template("writing_quiz.html", prompt=prompt["text"], prompt_id=prompt["id"], user_id=user_id)
+    return render_template(
+        "writing_quiz.html",
+        prompt=prompt["text"],
+        prompt_id=prompt["id"],
+        user_id=user_id,
+        is_guest=session.get("is_guest", False),
+        review_mode=review_mode,
+        current_user=session,
+    )
+
+@app.route("/submit_writing", methods=["POST"])
+def submit_writing():
+    try:
+        # --- ユーザ入力の取得 ---
+        user_answer = request.form.get("answer", "").strip()
+        prompt = request.form.get("prompt", "").strip()
+        prompt_id = request.form.get("prompt_id", 0)
+        user_id = session.get("user_id", None)
+        is_guest = session.get("is_guest", True)
+
+        # --- 採点処理（仮ロジック） ---
+        # 実際にはAIスコアリングや比較を行う部分
+        if not user_answer:
+            score = 0
+            feedback = "回答が入力されていません。"
+        else:
+            # 例としてスコアを簡単に生成（デモ用）
+            score = min(100, max(0, len(user_answer) * 10))
+            feedback = "全体的に良く書けています。もう少し自然な表現を意識しましょう。"
+
+        # --- 正解例や意味など（サンプル） ---
+        correct_example = "My greatest wish is to see the world."
+        correct_meaning = "願望、願う"
+
+        # --- テンプレートへ渡す ---
+        return render_template(
+            "result.html",
+            score=score,
+            prompt=prompt or "No prompt",
+            answer=user_answer or "（回答なし）",
+            correct_example=correct_example,
+            feedback=feedback,
+            user_id=user_id,
+            prompt_id=prompt_id,
+            is_guest=is_guest,
+            added_to_weak=False
+        )
+
+    except Exception as e:
+        # --- エラー時にログ出力 ---
+        import traceback
+        print("=== submit_writing ERROR ===")
+        print(traceback.format_exc())
+        flash("採点中にエラーが発生しました。")
+        return redirect(url_for("writing_quiz"))
 
 @app.route("/ranking")
 def ranking():
@@ -519,6 +575,7 @@ def logout():
 @app.route("/health")
 def health():
     return "OK", 200
+
 
 # ======================================================
 # ローカル実行
