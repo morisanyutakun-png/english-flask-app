@@ -53,7 +53,7 @@ except Exception as e:
     logger.error("Gemini init failed: %s", e)
 
 # ======================================================
-# 品詞マップ
+# 品詞マップ (英語キー -> 日本語)
 # ======================================================
 POS_JA = {
     "adjective": "形容詞",
@@ -73,7 +73,7 @@ POS_JA = {
 }
 
 # ======================================================
-# DB 初期化
+# DB 初期化（テーブル作成 + 後方互換で pos カラム追加）
 # ======================================================
 def init_db_file(path, create_statements):
     with sqlite3.connect(path) as conn:
@@ -82,6 +82,24 @@ def init_db_file(path, create_statements):
             c.execute(stmt)
         conn.commit()
         logger.info(f"DB initialized: {path}")
+
+def ensure_word_pos_column(path):
+    """
+    既存DBに pos（品詞）カラムが無ければ追加する。重複追加を避けるためにカラム存在チェックを行う。
+    pos には英語キー（例: 'noun','adjective'）を格納する想定。
+    """
+    try:
+        with sqlite3.connect(path) as conn:
+            c = conn.cursor()
+            # pragma table_info でカラム一覧を得る
+            c.execute("PRAGMA table_info(words)")
+            cols = [r[1] for r in c.fetchall()]
+            if "pos" not in cols:
+                logger.info("Adding 'pos' column to words table.")
+                c.execute("ALTER TABLE words ADD COLUMN pos TEXT DEFAULT NULL")
+                conn.commit()
+    except Exception as e:
+        logger.error("ensure_word_pos_column error: %s", e)
 
 def init_all_dbs():
     create_users_words = [
@@ -94,6 +112,7 @@ def init_all_dbs():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             word TEXT UNIQUE,
             definition_ja TEXT
+            -- pos カラムは後方互換のため ALTER TABLE で追加される可能性あり
         )''',
         '''CREATE TABLE IF NOT EXISTS student_answers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,6 +149,9 @@ def init_all_dbs():
     init_db_file(DB_FILE, create_users_words)
     init_db_file(WRITING_DB, create_writing)
 
+    # words テーブルに pos カラムがない場合は追加
+    ensure_word_pos_column(DB_FILE)
+
     # ゲストユーザー作成
     with sqlite3.connect(DB_FILE) as conn:
         c = conn.cursor()
@@ -154,38 +176,50 @@ def parse_json_from_text(text):
 # ======================================================
 # 採点関数
 # ======================================================
-def evaluate_answer(word, correct_meaning, user_answer):
+def evaluate_answer(word, correct_meaning, user_answer, pos_from_db=None):
+    """
+    戻り値:
+      score:int,
+      feedback:str,
+      example:str,
+      pos_ja:str (日本語表記),
+      simple_meaning:str
+    - pos_from_db は英語キー（例: 'noun'）が入っている想定（DBに格納されている場合）。
+    - Geminiが有効な場合、Geminiの返す pos を優先し、POS_JA マップへ変換する。
+    - Gemini無効時は pos_from_db を参照して日本語品詞を返す（無ければ 'その他'）。
+    """
+    # Gemini が無い場合の簡易採点
     if not HAS_GEMINI:
-        score = 100 if correct_meaning in user_answer else 60
-        return (
-            score,
-            "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう"),
-            f"{word} の使用例（採点対象外）",
-            "その他",
-            correct_meaning,
-        )
+        score = 100 if (correct_meaning and correct_meaning in user_answer) else 60
+        feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
+        example = f"{word} の使用例（採点対象外）"
+        pos_ja = POS_JA.get((pos_from_db or "other").lower(), "その他")
+        return score, feedback, example, pos_ja, correct_meaning
+
+    # Gemini 有効時
     try:
         prompt = f"""
 単語: {word}
 正しい意味: {correct_meaning}
 回答: {user_answer}
 JSON形式で返答してください。
-{{"score":80,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
+{{"score":80,"feedback":"...","example":"...","pos":"noun","simple_meaning":"...","example_ja":"..."}}
 """
         model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
         score = max(0, min(100, int(data.get("score", 0))))
-        return (
-            score,
-            data.get("feedback", ""),
-            data.get("example", f"{word} の使用例（採点対象外）"),
-            POS_JA.get(data.get("pos", "other").lower(), "その他"),
-            data.get("simple_meaning", correct_meaning),
-        )
+        feedback = data.get("feedback", "")
+        example = data.get("example", f"{word} の使用例（採点対象外）")
+        # pos は英語キーで返ることを想定。なければ DB のものを使い、最終的に日本語に変換する。
+        pos_en = (data.get("pos") or pos_from_db or "other").lower()
+        pos_ja = POS_JA.get(pos_en, "その他")
+        simple_meaning = data.get("simple_meaning", correct_meaning)
+        return score, feedback, example, pos_ja, simple_meaning
     except Exception as e:
         logger.error("Gemini Error: %s", e)
-        return 0, "採点エラー", f"{word} の使用例", "その他", correct_meaning
+        pos_ja = POS_JA.get((pos_from_db or "other").lower(), "その他")
+        return 0, "採点エラー", f"{word} の使用例", pos_ja, correct_meaning
 
 # ======================================================
 # Writing採点
@@ -211,11 +245,29 @@ def evaluate_writing(prompt_text, answer):
 # DB操作系
 # ======================================================
 def get_random_word():
+    """
+    RETURN:
+      (id, word, definition_ja, pos_en_or_none)
+    pos カラムが存在していれば値を返す（英語キーを想定）。
+    """
     try:
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
+            # words テーブルに pos カラムがあるかを確認して SELECT を切り替える
+            c.execute("PRAGMA table_info(words)")
+            cols = [r[1] for r in c.fetchall()]
+            if "pos" in cols:
+                c.execute("SELECT id, word, definition_ja, pos FROM words ORDER BY RANDOM() LIMIT 1")
+                row = c.fetchone()
+                if row:
+                    return row  # id, word, definition_ja, pos
+            # pos カラム無し or fetch 失敗時のフォールバック
             c.execute("SELECT id, word, definition_ja FROM words ORDER BY RANDOM() LIMIT 1")
-            return c.fetchone()
+            row = c.fetchone()
+            if row:
+                # pos がないから None を返す
+                return (row[0], row[1], row[2], None)
+            return None
     except Exception as e:
         logger.error("DB get_random_word error: %s", e)
         return None
@@ -297,14 +349,30 @@ def api_submit_answer():
         user_id = session.get("user_id", 0)
         word_id = request.form.get("word_id")
         answer = request.form.get("answer", "")
+
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
-            c.execute("SELECT word,definition_ja FROM words WHERE id=?", (word_id,))
-            row = c.fetchone()
-            if not row:
-                return jsonify({"error": "単語が見つかりません"}), 404
-            word, correct_meaning = row
-        score, feedback, example, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
+            # words テーブルに pos カラムがあるかを確認して SELECT を切り替える
+            c.execute("PRAGMA table_info(words)")
+            cols = [r[1] for r in c.fetchall()]
+            if "pos" in cols:
+                c.execute("SELECT word, definition_ja, pos FROM words WHERE id=?", (word_id,))
+                row = c.fetchone()
+                if not row:
+                    return jsonify({"error": "単語が見つかりません"}), 404
+                word, correct_meaning, pos_from_db = row
+            else:
+                c.execute("SELECT word, definition_ja FROM words WHERE id=?", (word_id,))
+                row = c.fetchone()
+                if not row:
+                    return jsonify({"error": "単語が見つかりません"}), 404
+                word, correct_meaning = row
+                pos_from_db = None
+
+        # 採点（pos_from_db を渡しておく）
+        score, feedback, example, pos_ja, simple_meaning = evaluate_answer(word, correct_meaning, answer, pos_from_db=pos_from_db)
+
+        # DB に記録（例: student_answers）
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute(
@@ -313,17 +381,21 @@ def api_submit_answer():
                 (user_id, word_id, score, feedback, example, datetime.datetime.utcnow().isoformat()),
             )
             conn.commit()
+
         avg = get_average_score(user_id)
+
+        # 返却 JSON（フロント向けに user_answer, correct_meaning, pos を含める）
         return jsonify({
-    "score": score,
-    "feedback": feedback,
-    "example": example or "（例文なし）",
-    "pos": pos,
-    "simple_meaning": simple_meaning,
-    "average_score": avg,
-    "your_answer": answer,                # 👈 あなたの回答を追加
-    "correct_meaning": correct_meaning    # 👈 正しい意味を追加
-})
+            "score": score,
+            "feedback": feedback,
+            "example": example or "（例文なし）",
+            "pos": pos_ja,                     # 日本語表記の品詞（例: 名詞）
+            "simple_meaning": simple_meaning or correct_meaning or "",
+            "average_score": avg,
+            "user_answer": answer,
+            # correct_meaning はフロント側で消す/表示しないは可能なのでここでは渡す（必要なら消してください）
+            "correct_meaning": correct_meaning or ""
+        })
     except Exception as e:
         logger.exception("api_submit_answer error")
         return jsonify({"error": "internal server error"}), 500
@@ -352,7 +424,13 @@ def word_quiz():
     if not word_data:
         flash("単語が登録されていません。")
         return redirect(url_for("index"))
-    word_id, word, definition_ja = word_data
+    # get_random_word は (id, word, definition_ja, pos_or_none) を返す
+    if len(word_data) == 4:
+        word_id, word, definition_ja, pos_from_db = word_data
+    else:
+        word_id, word, definition_ja = word_data
+        pos_from_db = None
+
     return render_template(
         "word_quiz.html",
         word_id=word_id,
