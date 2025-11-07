@@ -32,7 +32,6 @@ TMP_DIR = "/tmp"
 DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
 WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
 
-# コンテナ起動時に初期 DB があればコピー
 for src, dst in [(REPO_DB_FILE, DB_FILE), (REPO_WRITING_DB, WRITING_DB)]:
     if os.path.exists(src) and not os.path.exists(dst):
         shutil.copy(src, dst)
@@ -53,6 +52,26 @@ try:
         logger.warning("GEMINI_API_KEY not set; Gemini will not be used.")
 except Exception as e:
     logger.error("Gemini init failed: %s", e)
+
+# -----------------------
+# 品詞マッピング
+# -----------------------
+POS_JA = {
+    "adjective": "形容詞",
+    "noun": "名詞",
+    "verb": "動詞",
+    "adverb": "副詞",
+    "pronoun": "代名詞",
+    "preposition": "前置詞",
+    "conjunction": "接続詞",
+    "interjection": "間投詞",
+    "article": "冠詞",
+    "determiner": "限定詞",
+    "numeral": "数詞",
+    "particle": "助詞",
+    "modal": "法助動詞",
+    "other": "その他",
+}
 
 # -----------------------
 # DB 初期化
@@ -144,7 +163,8 @@ def evaluate_answer(word, correct_meaning, user_answer):
         score = 100 if user_answer.strip() and correct_meaning in user_answer else 60
         feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
         example = f"{word} の使用例: 例文をここに書く"
-        return score, feedback, example, "", correct_meaning
+        pos_ja = "その他"
+        return score, feedback, example, pos_ja, correct_meaning
     try:
         prompt = f"""
 単語: {word}
@@ -158,10 +178,19 @@ def evaluate_answer(word, correct_meaning, user_answer):
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
         score = max(0, min(100, int(data.get("score",0))))
-        return score, data.get("feedback",""), data.get("example",""), data.get("pos",""), data.get("simple_meaning","")
+        feedback = data.get("feedback","")
+        example = data.get("example","")
+        simple_meaning = data.get("simple_meaning","")
+        pos_ja = POS_JA.get(data.get("pos","other").lower(), "その他")
+        return score, feedback, example, pos_ja, simple_meaning
     except Exception as e:
         logger.error("Gemini Error: %s", e)
-        return 0, "採点できませんでした。", "", "", ""
+        score = 0
+        feedback = "採点できませんでした。"
+        example = f"{word} の使用例を確認してください"
+        simple_meaning = correct_meaning
+        pos_ja = "その他"
+        return score, feedback, example, pos_ja, simple_meaning
 
 def evaluate_writing(prompt_text, answer):
     if not HAS_GEMINI:
@@ -172,13 +201,15 @@ def evaluate_writing(prompt_text, answer):
         res = model.generate_content(f"お題:{prompt_text}\n回答:{answer}\nJSONで返して")
         data = parse_json_from_text(res.text or "")
         score = max(0, min(100, int(data.get("score",0))))
-        return score, data.get("feedback",""), data.get("correct_example","")
+        feedback = data.get("feedback","")
+        correct_example = data.get("correct_example","")
+        return score, feedback, correct_example
     except Exception as e:
         logger.error("Gemini writing error: %s", e)
         return 0, "採点中にエラーが発生しました。", ""
 
 # -----------------------
-# DB 操作
+# DB 操作関数
 # -----------------------
 def get_random_word():
     try:
@@ -297,6 +328,7 @@ def api_submit_answer():
             "example": example,
             "pos": pos,
             "simple_meaning": simple_meaning,
+            "user_answer": answer,
             "average_score": average_score
         })
     except Exception as e:
@@ -325,7 +357,8 @@ def api_submit_writing():
         return jsonify({
             "score":score,
             "feedback":feedback,
-            "correct_example":correct_example
+            "correct_example":correct_example,
+            "user_answer": answer
         })
     except Exception as e:
         logger.exception("api_submit_writing error")
