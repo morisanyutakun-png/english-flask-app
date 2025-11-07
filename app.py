@@ -7,6 +7,7 @@ import os
 import logging
 import shutil
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # -----------------------
 # Flask アプリ初期化
@@ -215,6 +216,52 @@ def get_random_prompt():
     return {"id": None, "text": "お題が見つかりませんでした"}
 
 # -----------------------
+# ユーザ認証ルート
+# -----------------------
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, password FROM users WHERE username=?", (username,))
+            row = c.fetchone()
+            if row and check_password_hash(row[1], password):
+                session["user_id"] = row[0]
+                session["username"] = username
+                session["is_guest"] = False
+                return redirect(url_for("index"))
+        return render_template("login.html", error="ユーザー名かパスワードが違います")
+    return render_template("login.html")
+
+@app.route("/guest_login", methods=["POST"])
+def guest_login():
+    session["user_id"] = 0
+    session["username"] = "ゲスト"
+    session["is_guest"] = True
+    return redirect(url_for("index"))
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        if not username or not password:
+            return render_template("login.html", error="ユーザー名とパスワードは必須です")
+        hashed = generate_password_hash(password)
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                c = conn.cursor()
+                c.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed))
+                conn.commit()
+                flash("登録完了！ログインしてください")
+                return redirect(url_for("login"))
+        except sqlite3.IntegrityError:
+            return render_template("login.html", error="そのユーザー名は既に使われています")
+    return render_template("login.html")
+
+# -----------------------
 # API ルーティング
 # -----------------------
 @app.route("/api/submit_answer", methods=["POST"])
@@ -244,7 +291,6 @@ def api_submit_answer():
             conn.commit()
             logger.info("Answer recorded for user_id=%s, word_id=%s, score=%s", user_id, word_id, score)
 
-        # 平均スコアを追加
         average_score = get_average_score(user_id)
 
         return jsonify({
@@ -253,7 +299,7 @@ def api_submit_answer():
             "example": example,
             "pos": pos,
             "simple_meaning": simple_meaning,
-            "average_score": average_score  # ← ここを追加
+            "average_score": average_score
         })
     except Exception as e:
         logger.exception("api_submit_answer error")
