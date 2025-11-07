@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 import sqlite3
 import datetime
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+import sqlite3
+import datetime
 import json
 import os
 import logging
@@ -159,19 +162,27 @@ def parse_json_from_text(text):
 # 採点関数
 # -----------------------
 def evaluate_answer(word, correct_meaning, user_answer):
+    """
+    Gemini を使って動的に採点。例文は採点対象外、品詞も返す。
+    """
     if not HAS_GEMINI:
         score = 100 if user_answer.strip() and correct_meaning in user_answer else 60
         feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
-        example = f"{word} の使用例: 例文をここに書く"
+        example = f"{word} の使用例（採点対象外）"
         pos_ja = "その他"
         return score, feedback, example, pos_ja, correct_meaning
+
     try:
         prompt = f"""
 単語: {word}
 正しい意味: {correct_meaning}
 学習者の回答: {user_answer}
 
-以下のJSON形式で返してください:
+指示:
+- 学習者の回答の意味が正しいかだけを採点してください。
+- 例文は採点に含めないでください。
+- 品詞を英語で返してください。
+- JSON形式で出力してください:
 {{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
 """
         model = genai.GenerativeModel("gemini-2.5-flash")
@@ -179,23 +190,18 @@ def evaluate_answer(word, correct_meaning, user_answer):
         data = parse_json_from_text(res.text or "")
         score = max(0, min(100, int(data.get("score",0))))
         feedback = data.get("feedback","")
-        example = data.get("example","")
-        simple_meaning = data.get("simple_meaning","")
+        example = data.get("example", f"{word} の使用例（採点対象外）")
+        simple_meaning = data.get("simple_meaning", correct_meaning)
         pos_ja = POS_JA.get(data.get("pos","other").lower(), "その他")
         return score, feedback, example, pos_ja, simple_meaning
     except Exception as e:
         logger.error("Gemini Error: %s", e)
-        score = 0
-        feedback = "採点できませんでした。"
-        example = f"{word} の使用例を確認してください"
-        simple_meaning = correct_meaning
-        pos_ja = "その他"
-        return score, feedback, example, pos_ja, simple_meaning
+        return 0, "採点できませんでした。", f"{word} の使用例（採点対象外）", "その他", correct_meaning
 
 def evaluate_writing(prompt_text, answer):
     if not HAS_GEMINI:
         score = 80 if len(answer.split()) > 3 else 30
-        return score, "（簡易採点）改善点を確認してください", "例文をここに書く"
+        return score, "（簡易採点）改善点を確認してください", "例文は参考"
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         res = model.generate_content(f"お題:{prompt_text}\n回答:{answer}\nJSONで返して")
