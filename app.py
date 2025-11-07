@@ -33,9 +33,9 @@ TMP_DIR = "/tmp"
 DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
 WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
 
-# コンテナ起動時に初期 DB があればコピー
+# コンテナ起動時に初期 DB があればコピー（存在しない場合のみコピー）
 for src, dst in [(REPO_DB_FILE, DB_FILE), (REPO_WRITING_DB, WRITING_DB)]:
-    if os.path.exists(src):
+    if os.path.exists(src) and not os.path.exists(dst):
         shutil.copy(src, dst)
         logger.info(f"DB copied to tmp: {dst}")
 
@@ -250,15 +250,19 @@ def register():
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 c = conn.cursor()
+                # 事前にユーザー名が存在するかチェック
+                c.execute("SELECT id FROM users WHERE username=?", (username,))
+                if c.fetchone():
+                    return render_template("register.html", error="そのユーザー名は既に使われています")
+                # 登録
                 c.execute("INSERT INTO users (username,password) VALUES (?,?)", (username, hashed))
                 conn.commit()
                 flash("登録完了！ログインしてください")
                 return redirect(url_for("login"))
-        except sqlite3.IntegrityError:
-            return render_template("register.html", error="そのユーザー名は既に使われています")
-    # GET リクエスト時は register.html を表示
+        except Exception as e:
+            logger.error("Register Error: %s", e)
+            return render_template("register.html", error="登録中にエラーが発生しました")
     return render_template("register.html")
-
 
 # -----------------------
 # API ルート
@@ -331,16 +335,13 @@ def api_submit_writing():
 @app.route("/")
 @app.route("/index")
 def index():
-    # ログインしていない場合は login.html にリダイレクト
     if "user_id" not in session:
         return redirect(url_for("login"))
-    
     return render_template(
         "index.html",
         username=session.get("username", "ゲスト"),
         is_guest=session.get("is_guest", False)
     )
-
 
 @app.route("/word_quiz")
 def word_quiz():
@@ -397,7 +398,7 @@ def health():
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect(url_for("login"))  # index ではなく login にリダイレクト
+    return redirect(url_for("login"))
 
 # -----------------------
 # ローカル起動
