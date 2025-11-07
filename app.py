@@ -13,7 +13,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # -----------------------
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_for_local_only")
-CORS(app, origins="*")  # 外部フロントからのアクセスを許可
+CORS(app, origins="*")
 
 # -----------------------
 # ロガー設定
@@ -32,7 +32,7 @@ TMP_DIR = "/tmp"
 DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
 WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
 
-# コンテナ起動時に初期 DB があればコピー（存在しない場合のみコピー）
+# コンテナ起動時に初期 DB があればコピー
 for src, dst in [(REPO_DB_FILE, DB_FILE), (REPO_WRITING_DB, WRITING_DB)]:
     if os.path.exists(src) and not os.path.exists(dst):
         shutil.copy(src, dst)
@@ -50,12 +50,12 @@ try:
         HAS_GEMINI = True
         logger.info("Gemini API configured successfully.")
     else:
-        logger.warning("GEMINI_API_KEY not set; running without Gemini.")
+        logger.warning("GEMINI_API_KEY not set; Gemini will not be used.")
 except Exception as e:
-    logger.error("Google GenerativeAI not available or failed to init: %s", e)
+    logger.error("Gemini init failed: %s", e)
 
 # -----------------------
-# DB 初期化関数
+# DB 初期化
 # -----------------------
 def init_db_file(path, create_statements):
     with sqlite3.connect(path) as conn:
@@ -84,7 +84,6 @@ def init_all_dbs():
             score INTEGER,
             feedback TEXT,
             example TEXT,
-            example_ja TEXT,
             attempt_date TEXT,
             is_wrong INTEGER DEFAULT 0,
             wrong_count INTEGER DEFAULT 0,
@@ -113,10 +112,16 @@ def init_all_dbs():
     init_db_file(DB_FILE, create_users_words)
     init_db_file(WRITING_DB, create_writing)
 
+    # ゲストユーザー作成（id=0）
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO users (id, username, password) VALUES (0,'ゲスト','')")
+        conn.commit()
+
 init_all_dbs()
 
 # -----------------------
-# JSON 抽出ユーティリティ
+# JSON 抽出
 # -----------------------
 def parse_json_from_text(text):
     try:
@@ -124,9 +129,12 @@ def parse_json_from_text(text):
         end = text.rindex("}") + 1
         snippet = text[start:end]
         return json.loads(snippet)
+    except (ValueError, json.JSONDecodeError):
+        logger.warning("JSON parse failed, returning empty dict")
+        return {}
     except Exception as e:
-        logger.error("JSON parse error: %s", e)
-        return None
+        logger.error("Unexpected JSON parse error: %s", e)
+        return {}
 
 # -----------------------
 # 採点関数
@@ -135,47 +143,42 @@ def evaluate_answer(word, correct_meaning, user_answer):
     if not HAS_GEMINI:
         score = 100 if user_answer.strip() and correct_meaning in user_answer else 60
         feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
-        example_en = f"Example: {word} is used like ..."
-        example_ja = f"例文: {word} の使い方の例"
-        return score, feedback, example_en, example_ja, "", correct_meaning
+        example = f"{word} の使用例: 例文をここに書く"
+        return score, feedback, example, "", correct_meaning
     try:
         prompt = f"""
 単語: {word}
 正しい意味: {correct_meaning}
 学習者の回答: {user_answer}
 
-例文とその日本語訳も含め、以下のJSON形式で返してください:
-{{"score":0,"feedback":"...","example":"...","example_ja":"...","pos":"...","simple_meaning":"..."}}
+以下のJSON形式で返してください:
+{{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
 """
         model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(prompt)
         data = parse_json_from_text(res.text or "")
-        if data:
-            score = int(data.get("score", 0))
-            score = max(0, min(100, score))
-            return score, data.get("feedback",""), data.get("example",""), data.get("example_ja",""), data.get("pos",""), data.get("simple_meaning","")
+        score = max(0, min(100, int(data.get("score",0))))
+        return score, data.get("feedback",""), data.get("example",""), data.get("pos",""), data.get("simple_meaning","")
     except Exception as e:
         logger.error("Gemini Error: %s", e)
-    return 0, "採点できませんでした。", "", "", "", ""
+        return 0, "採点できませんでした。", "", "", ""
 
 def evaluate_writing(prompt_text, answer):
     if not HAS_GEMINI:
         score = 80 if len(answer.split()) > 3 else 30
-        return score, "（簡易採点）改善点を確認してください", "This is an example."
+        return score, "（簡易採点）改善点を確認してください", "例文をここに書く"
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         res = model.generate_content(f"お題:{prompt_text}\n回答:{answer}\nJSONで返して")
         data = parse_json_from_text(res.text or "")
-        if data:
-            score = int(data.get("score",0))
-            score = max(0, min(100, score))
-            return score, data.get("feedback",""), data.get("correct_example","")
+        score = max(0, min(100, int(data.get("score",0))))
+        return score, data.get("feedback",""), data.get("correct_example","")
     except Exception as e:
         logger.error("Gemini writing error: %s", e)
-    return 0, "採点中にエラーが発生しました。", ""
+        return 0, "採点中にエラーが発生しました。", ""
 
 # -----------------------
-# DB 操作関数
+# DB 操作
 # -----------------------
 def get_random_word():
     try:
@@ -214,7 +217,7 @@ def get_random_prompt():
     return {"id": None, "text": "お題が見つかりませんでした"}
 
 # -----------------------
-# ユーザ認証ルート
+# 認証ルート
 # -----------------------
 @app.route("/login", methods=["GET","POST"])
 def login():
@@ -264,7 +267,7 @@ def register():
     return render_template("register.html")
 
 # -----------------------
-# API ルート（日本語例文対応）
+# API
 # -----------------------
 @app.route("/api/submit_answer", methods=["POST"])
 def api_submit_answer():
@@ -279,26 +282,21 @@ def api_submit_answer():
             if not row:
                 return jsonify({"error":"単語が見つかりません"}),404
             word, correct_meaning = row
-
-        score, feedback, example_en, example_ja, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
-
+        score, feedback, example, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute("""
-                INSERT INTO student_answers (user_id, word_id, score, feedback, example, example_ja, attempt_date)
-                VALUES (?,?,?,?,?,?,?)
-            """,(user_id, word_id, score, feedback, example_en, example_ja, datetime.datetime.now().isoformat()))
+                INSERT INTO student_answers (user_id, word_id, score, feedback, example, attempt_date)
+                VALUES (?,?,?,?,?,?)
+            """,(user_id, word_id, score, feedback, example, datetime.datetime.utcnow().isoformat()))
             conn.commit()
-
         average_score = get_average_score(user_id)
         return jsonify({
             "score": score,
             "feedback": feedback,
-            "example": example_en,
-            "example_ja": example_ja,
+            "example": example,
             "pos": pos,
             "simple_meaning": simple_meaning,
-            "definition_ja": correct_meaning,
             "average_score": average_score
         })
     except Exception as e:
@@ -308,7 +306,7 @@ def api_submit_answer():
 @app.route("/api/submit_writing", methods=["POST"])
 def api_submit_writing():
     try:
-        user_id = request.form.get("user_id",0)
+        user_id = int(request.form.get("user_id",0))
         prompt_id = request.form.get("prompt_id")
         answer = request.form.get("answer","")
         with sqlite3.connect(WRITING_DB) as conn:
@@ -322,7 +320,7 @@ def api_submit_writing():
             c.execute("""
                 INSERT INTO writing_answers (user_id,prompt_id,answer,score,feedback,correct_example,attempt_date)
                 VALUES (?,?,?,?,?,?,?)
-            """,(user_id,prompt_id,answer,score,feedback,correct_example,datetime.datetime.now().isoformat()))
+            """,(user_id,prompt_id,answer,score,feedback,correct_example,datetime.datetime.utcnow().isoformat()))
             conn.commit()
         return jsonify({
             "score":score,
@@ -334,7 +332,7 @@ def api_submit_writing():
         return jsonify({"error":"internal server error"}),500
 
 # -----------------------
-# 画面ルート
+# 画面
 # -----------------------
 @app.route("/")
 @app.route("/index")
