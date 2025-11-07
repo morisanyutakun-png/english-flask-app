@@ -3,7 +3,6 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 import sqlite3
 import datetime
 import json
-import re
 import os
 import logging
 import shutil
@@ -116,14 +115,14 @@ def init_all_dbs():
 init_all_dbs()
 
 # -----------------------
-# JSON 抽出ユーティリティ
+# JSON 抽出ユーティリティ（修正版）
 # -----------------------
 def parse_json_from_text(text):
-    match = re.search(r'(\{(?:[^{}]|(?R))*\})', text, re.DOTALL)
-    snippet = match.group(1) if match else None
-    if not snippet:
-        return None
+    """最初のJSONブロックを抽出してパース"""
     try:
+        start = text.index("{")
+        end = text.rindex("}") + 1
+        snippet = text[start:end]
         return json.loads(snippet)
     except Exception as e:
         logger.error("JSON parse error: %s", e)
@@ -324,7 +323,6 @@ def writing_quiz():
 # -----------------------
 @app.route("/ranking")
 def ranking():
-    # 例としてユーザーごとの平均スコアを取得して表示
     try:
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
@@ -350,9 +348,6 @@ def ranking():
 def health():
     return "OK", 200
 
-# -----------------------
-# 追加修正： logout ルート
-# -----------------------
 @app.route("/logout")
 def logout():
     session.clear()
