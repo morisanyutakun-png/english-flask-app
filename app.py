@@ -1,4 +1,3 @@
-# studyST/app.py
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 import sqlite3
 import datetime
@@ -85,6 +84,7 @@ def init_all_dbs():
             score INTEGER,
             feedback TEXT,
             example TEXT,
+            example_ja TEXT,
             attempt_date TEXT,
             is_wrong INTEGER DEFAULT 0,
             wrong_count INTEGER DEFAULT 0,
@@ -135,16 +135,17 @@ def evaluate_answer(word, correct_meaning, user_answer):
     if not HAS_GEMINI:
         score = 100 if user_answer.strip() and correct_meaning in user_answer else 60
         feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
-        example = f"Example: {word} is used like ..."
-        return score, feedback, example, "", correct_meaning
+        example_en = f"Example: {word} is used like ..."
+        example_ja = f"例文: {word} の使い方の例"
+        return score, feedback, example_en, example_ja, "", correct_meaning
     try:
         prompt = f"""
 単語: {word}
 正しい意味: {correct_meaning}
 学習者の回答: {user_answer}
 
-以下のJSON形式で返してください:
-{{"score":0,"feedback":"...","example":"...","pos":"...","simple_meaning":"..."}}
+例文とその日本語訳も含め、以下のJSON形式で返してください:
+{{"score":0,"feedback":"...","example":"...","example_ja":"...","pos":"...","simple_meaning":"..."}}
 """
         model = genai.GenerativeModel("gemini-2.5-flash")
         res = model.generate_content(prompt)
@@ -152,10 +153,10 @@ def evaluate_answer(word, correct_meaning, user_answer):
         if data:
             score = int(data.get("score", 0))
             score = max(0, min(100, score))
-            return score, data.get("feedback",""), data.get("example",""), data.get("pos",""), data.get("simple_meaning","")
+            return score, data.get("feedback",""), data.get("example",""), data.get("example_ja",""), data.get("pos",""), data.get("simple_meaning","")
     except Exception as e:
         logger.error("Gemini Error: %s", e)
-    return 0, "採点できませんでした。", "", "", ""
+    return 0, "採点できませんでした。", "", "", "", ""
 
 def evaluate_writing(prompt_text, answer):
     if not HAS_GEMINI:
@@ -250,11 +251,9 @@ def register():
         try:
             with sqlite3.connect(DB_FILE) as conn:
                 c = conn.cursor()
-                # 事前にユーザー名が存在するかチェック
                 c.execute("SELECT id FROM users WHERE username=?", (username,))
                 if c.fetchone():
                     return render_template("register.html", error="そのユーザー名は既に使われています")
-                # 登録
                 c.execute("INSERT INTO users (username,password) VALUES (?,?)", (username, hashed))
                 conn.commit()
                 flash("登録完了！ログインしてください")
@@ -265,7 +264,7 @@ def register():
     return render_template("register.html")
 
 # -----------------------
-# API ルート
+# API ルート（日本語例文対応）
 # -----------------------
 @app.route("/api/submit_answer", methods=["POST"])
 def api_submit_answer():
@@ -280,21 +279,26 @@ def api_submit_answer():
             if not row:
                 return jsonify({"error":"単語が見つかりません"}),404
             word, correct_meaning = row
-        score, feedback, example, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
+
+        score, feedback, example_en, example_ja, pos, simple_meaning = evaluate_answer(word, correct_meaning, answer)
+
         with sqlite3.connect(DB_FILE) as conn:
             c = conn.cursor()
             c.execute("""
-                INSERT INTO student_answers (user_id, word_id, score, feedback, example, attempt_date)
-                VALUES (?,?,?,?,?,?)
-            """,(user_id, word_id, score, feedback, example, datetime.datetime.now().isoformat()))
+                INSERT INTO student_answers (user_id, word_id, score, feedback, example, example_ja, attempt_date)
+                VALUES (?,?,?,?,?,?,?)
+            """,(user_id, word_id, score, feedback, example_en, example_ja, datetime.datetime.now().isoformat()))
             conn.commit()
+
         average_score = get_average_score(user_id)
         return jsonify({
             "score": score,
             "feedback": feedback,
-            "example": example,
+            "example": example_en,
+            "example_ja": example_ja,
             "pos": pos,
             "simple_meaning": simple_meaning,
+            "definition_ja": correct_meaning,
             "average_score": average_score
         })
     except Exception as e:
