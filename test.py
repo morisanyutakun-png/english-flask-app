@@ -1,34 +1,12 @@
 import sqlite3
+DB_FILE = "/tmp/english_learning.db"
 
-DB_FILE = "writing_quiz.db"
-
-def create_tables():
-    conn = sqlite3.connect(DB_FILE)
+with sqlite3.connect(DB_FILE) as conn:
     c = conn.cursor()
+    c.execute("SELECT * FROM users;")
+    users = c.fetchall()
+    print("users table:", users)
 
-    # お題テーブル（すでにある場合はスキップ）
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS writing_prompts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            prompt_text TEXT NOT NULL
-        )
-    """)
-
-    # 回答テーブル（これが今回必要！）
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS writing_answers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            prompt_id INTEGER,
-            answer_text TEXT,
-            score INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    conn.commit()
-    conn.close()
-    print("✅ writing_prompts / writing_answers テーブルを確認・作成しました。")
-
-if __name__ == "__main__":
-    create_tables()
+    c.execute("SELECT * FROM student_answers;")
+    answers = c.fetchall()
+    print("student_answers table:", answers)
