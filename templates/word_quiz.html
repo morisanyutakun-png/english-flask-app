@@ -176,11 +176,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
         const exampleBox=document.getElementById('example-box');
         exampleBox.style.display='block';
         // ------------------------------
-        // 文ごとに改行して表示する処理
-        const sentences = data.example.split(/(?<=[。.!?])/); // 句点やピリオドで分割
+        // 文ごとに改行して表示する処理（改良版）
+        const sentences = data.example.split(/(?<=[。.!?])\s+/); // 句点やピリオドの後の空白で分割
         document.getElementById('example-sentence').innerHTML = sentences.map(s => s.trim()).filter(Boolean).join('<br>');
-        document.getElementById('example-translation').textContent=data.example_ja||'';
-        // ------------------------------
+        document.getElementById('example-translation').textContent = data.example_ja || '';
+
       }
 
     }catch(err){
