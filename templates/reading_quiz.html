@@ -2,8 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>日本語訳トレーニング</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=10">
+  <title>リーディングトレーニング</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=11">
   <style>
     body {
       font-family:"Hiragino Sans","Noto Sans JP",sans-serif;
@@ -73,15 +73,16 @@
 
     <!-- メインカード -->
     <div class="quiz-card">
-      <p class="prompt">📖 英文: {{ prompt or "英文がありません" }}</p>
+      <p class="prompt">📖 英文: {{ passage or "英文がありません" }}</p>
 
       <form id="readingForm" method="POST" action="{{ url_for('submit_reading') }}">
         <textarea name="answer" rows="5" placeholder="ここに日本語訳を入力..." required></textarea>
 
         <!-- hiddenデータ -->
-        <input type="hidden" name="prompt" value="{{ prompt }}">
+        <input type="hidden" name="passage_id" value="{{ passage_id or 0 }}">
+        <input type="hidden" name="title" value="{{ title or '' }}">
+        <input type="hidden" name="correct_answer" value="{{ correct_answer or '' }}">
         <input type="hidden" name="user_id" value="{{ user_id or 0 }}">
-        <input type="hidden" name="prompt_id" value="{{ prompt_id or 0 }}">
         {% if review_mode %}
           <input type="hidden" name="review_mode" value="1">
         {% endif %}
