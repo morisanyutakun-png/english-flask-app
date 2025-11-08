@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>英作文トレーニング</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=9">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=10">
   <style>
     body {
       font-family:"Hiragino Sans","Noto Sans JP",sans-serif;
@@ -106,9 +106,15 @@
     const overlay = document.getElementById('overlay');
     const submitBtn = document.getElementById('submitBtn');
 
-    form.addEventListener('submit', function(){
+    form.addEventListener('submit', function(e){
       overlay.style.display = 'flex';
       submitBtn.disabled = true; // 二重送信防止
+    });
+
+    // ===== 結果ページリダイレクト後も表示を消す =====
+    window.addEventListener('pageshow', function(event) {
+      overlay.style.display = 'none';
+      submitBtn.disabled = false;
     });
   </script>
 </body>
