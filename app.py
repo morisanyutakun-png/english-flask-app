@@ -282,7 +282,7 @@ def evaluate_writing(prompt_text, answer):
     戻り値:
       score:int
       feedback:str
-      correct_example:str
+      correct_example:str（英語のみ）
     """
     if not answer:
         return 0, "回答が入力されていません。", ""
@@ -295,18 +295,17 @@ def evaluate_writing(prompt_text, answer):
     try:
         model = genai.GenerativeModel("gemini-2.5-flash")
         prompt = f"""
-お題: {prompt_text}
-回答: {answer}
-
-必ず以下の JSON 形式で返してください:
+以下の日本語文を英語に翻訳し、必ずJSON形式で返してください。
+JSONのキーは以下のみ使用してください：
 {{
   "score": 0,
   "feedback": "",
   "correct_example": ""
 }}
-- score は 0〜100 の整数
-- feedback は日本語で改善点
-- correct_example は模範例文
+余計なテキストやお題の日本語は一切含めないでください。
+
+日本語文: {prompt_text}
+学生回答: {answer}
 """
         res = model.generate_content(prompt)
         raw_text = res.text or ""
@@ -319,11 +318,16 @@ def evaluate_writing(prompt_text, answer):
         score = max(0, min(100, int(data.get("score", 0))))
         feedback = data.get("feedback") or "採点結果なし"
         correct_example = data.get("correct_example") or "模範例文なし"
+
+        # correct_example が dict の場合も文字列化
+        if isinstance(correct_example, dict):
+            correct_example = correct_example.get("en", "模範例文なし")
+
         return score, feedback, correct_example
 
     except Exception as e:
         logger.error("Gemini writing error, fallback to simple scoring: %s", e)
-        # 確実に簡易採点
+        # 簡易採点
         score = min(100, len(answer.split()) * 10)  # 単語数×10点
         feedback = "採点エラーにより簡易採点を行いました。"
         correct_example = "My greatest wish is to see the world."
