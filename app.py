@@ -244,7 +244,7 @@ def get_random_reading():
     return {"id": None, "title": "エラー", "passage": "", "question": "", "correct_answer": ""}
 
 # ======================================================
-# === READING QUIZ 修正版 ===
+# === READING QUIZ 修正版（jemini生成日本語訳対応） ===
 # ======================================================
 @app.route("/reading_quiz")
 def reading_quiz():
@@ -278,7 +278,6 @@ def reading_quiz():
         prompt=passage_text,
         question="",
         passage_id=passage_id,
-        correct_answer="",
         user_id=user_id,
         current_user=current_user
     )
@@ -291,7 +290,7 @@ def submit_reading():
         passage_id = int(request.form.get("passage_id", 0))
         user_answer = request.form.get("answer", "").strip()
 
-        # DBから問題取得
+        # DBから英文取得
         with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
             c.execute("SELECT text FROM reading_texts WHERE id=?", (passage_id,))
@@ -299,9 +298,12 @@ def submit_reading():
 
         passage_text = row[0] if row else "This is a sample English passage for practice."
 
+        # --- jeminiで模範日本語訳を生成 ---
+        correct_answer_text = generate_japanese_translation(passage_text)
+
         # 採点
         score, feedback = evaluate_reading(
-            passage_text, "", "", user_answer
+            passage_text, "", correct_answer_text, user_answer
         )
 
         # DB保存
@@ -321,13 +323,13 @@ def submit_reading():
             ))
             conn.commit()
 
-        # sessionに結果保存（必ずすべてのキーをセット）
+        # sessionに結果保存
         session["reading_result"] = {
             "title": "",
             "prompt": passage_text,
             "question": "",
             "user_answer": user_answer or "（回答なし）",
-            "correct_answer": "Sample correct answer.",
+            "correct_answer": correct_answer_text,
             "score": score,
             "feedback": feedback,
             "passage_id": passage_id
@@ -357,7 +359,7 @@ def reading_result():
         "prompt": result.get("prompt", ""),
         "question": result.get("question", ""),
         "answer": result.get("user_answer", "（回答なし）"),
-        "correct_example": result.get("correct_answer", "Sample correct answer."),
+        "correct_example": result.get("correct_answer", "（例文なし）"),
         "score": result.get("score", 0),
         "feedback": result.get("feedback", ""),
         "user_id": session.get("user_id", 0),

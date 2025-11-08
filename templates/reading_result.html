@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>日本語訳採点結果</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=38">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=39">
   <style>
     body { font-family:"Hiragino Sans","Noto Sans JP",sans-serif; margin:0; padding:0; background: linear-gradient(135deg,#eef2ff,#f8fafc); color:#333; }
     .container { max-width:720px; margin:60px auto; padding:20px; display:flex; flex-direction:column; align-items:center; position:relative; }
@@ -51,31 +51,35 @@
       {% endif %}
     {% endwith %}
 
-    <h1>リーディング結果</h1>
+    <h1>日本語訳採点結果</h1>
 
     <div class="score-box">
       <h2 id="score" data-score="{{ score|default(0) }}">0 点</h2>
     </div>
 
+    <!-- 英文カード -->
     <div class="card">
-      <h3>📖 英文</h3>
+      <h3>📖 英文
+        <button class="tts-btn" id="tts-prompt-btn">🎵 英文を再生</button>
+      </h3>
       <p id="reading-prompt">{{ prompt|default('英文がありません') }}</p>
     </div>
 
+    <!-- ユーザー訳カード -->
     <div class="card">
       <h3>✏ あなたの日本語訳</h3>
       <p>{{ answer|default('（回答なし）') }}</p>
     </div>
 
+    <!-- 模範日本語訳カード -->
     <div class="card">
-      <h3>📝 模範日本語訳
-        <button class="tts-btn" id="tts-english-btn">🎵 英文を再生</button>
-      </h3>
+      <h3>📝 模範日本語訳</h3>
       <p id="example-jp">{{ correct_example|default('') }}</p>
       <!-- 非表示で英文保持 -->
       <p id="example-en" style="display:none;">{{ prompt|default('') }}</p>
     </div>
 
+    <!-- アドバイスカード -->
     <div class="card">
       <h3>🧭 アドバイス</h3>
       <p>{{ feedback|default('') }}</p>
@@ -129,11 +133,18 @@
       utter.rate=0.95;
       utter.pitch=1.0;
       utter.volume=1.0;
-      const enVoice=voices.find(v=>v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v=>v.lang.startsWith('en'));
+      const enVoice = voices.find(v=>v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v=>v.lang.startsWith('en'));
       if(enVoice) utter.voice = enVoice;
       speechSynthesis.speak(utter);
     }
 
+    // 英文再生ボタンイベント
+    document.getElementById('tts-prompt-btn')?.addEventListener('click', () => {
+      const text = document.getElementById('reading-prompt')?.textContent;
+      playEnglishTTS(text);
+    });
+
+    // 模範日本語訳カードの非表示英文再生も可能
     document.getElementById('tts-english-btn')?.addEventListener('click', () => {
       const text = document.getElementById('example-en')?.textContent;
       playEnglishTTS(text);
