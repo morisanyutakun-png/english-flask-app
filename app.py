@@ -504,7 +504,7 @@ def evaluate_answer(word, correct_meaning, user_answer, pos_from_db=None):
         return 0, "採点エラー", example, pos_ja, (correct_meaning or "")
 
 # ======================================================
-# Gemini 簡易採点関数（リーディング用・安全版）
+# Gemini で模範日本語訳生成＋採点（安全版）
 # ======================================================
 def generate_and_evaluate_reading(passage: str, user_answer: str):
     """
@@ -515,15 +515,17 @@ def generate_and_evaluate_reading(passage: str, user_answer: str):
       score:int
       feedback:str
     """
+    # フォールバック値
     correct_answer_text = "（模範訳生成失敗）"
     score = 60
     feedback = "採点エラーにより簡易スコアを返しました。"
 
-    if not user_answer:
+    # 回答未入力
+    if not user_answer.strip():
         return correct_answer_text, 0, "回答が入力されていません。"
 
+    # Gemini API が使えない場合
     if not HAS_GEMINI:
-        # Gemini API が使えない場合
         correct_answer_text = "（模範訳未生成）"
         score = 60
         feedback = "（簡易採点）内容を確認してください。"
@@ -531,11 +533,14 @@ def generate_and_evaluate_reading(passage: str, user_answer: str):
 
     try:
         model = genai.GenerativeModel("gemini-2.5-flash")
+        # promptを明確に「模範訳と採点を返す」と指示
         prompt = f"""
-次の英文読解問題について、
-1. 日本語の模範訳を作成
-2. 学生の回答を採点
-JSON形式で返すこと。余計なテキストは含めない。
+次の英文読解問題について、以下を行ってください。
+1. 学生の回答に対する日本語の模範訳を作成
+2. 学生の回答を採点し、コメントを付ける
+
+JSON形式で返してください。余計な説明は入れないこと。
+
 文章:
 {passage}
 
@@ -549,21 +554,25 @@ JSON形式で返すこと。余計なテキストは含めない。
   "feedback": ""
 }}
 """
+
         res = model.generate_content(prompt)
         raw_text = res.text or ""
         logger.info("Gemini raw response: %s", raw_text)
 
-        # JSON抽出
+        # JSON抽出（最初の{}だけでなく複数ある場合は安全に抽出）
         match = re.search(r"\{.*\}", raw_text, re.S)
         if match:
             data = json.loads(match.group(0))
             correct_answer_text = data.get("correct_answer") or "（模範訳生成失敗）"
             score = max(0, min(100, int(data.get("score", 0))))
             feedback = data.get("feedback") or "採点結果なし"
+        else:
+            logger.warning("Gemini response JSON parse failed, using fallback.")
 
     except Exception as e:
         logger.exception("Gemini generate_and_evaluate_reading error: %s", e)
 
+    # 絶対に3つ返す
     return correct_answer_text, score, feedback
 
 # ======================================================
