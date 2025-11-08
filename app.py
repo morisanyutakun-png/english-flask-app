@@ -254,17 +254,17 @@ def reading_quiz():
     user_id = session.get("user_id", 0)
     reading = get_random_reading()
 
-    # passage が空なら仮の英文を入れる
-    passage_text = reading["passage"] or "This is a sample English passage for practice."
-    question_text = reading["question"] or "Please answer the question based on the passage."
+    # passage が空なら仮英文を設定
+    prompt_text = reading.get("passage") or "This is a sample English passage for practice."
+    question_text = reading.get("question") or "Please answer the question based on the passage."
 
     current_user = {"is_authenticated": bool(user_id)}
     return render_template(
         "reading_quiz.html",
-        title=reading["title"],
-        prompt=passage_text,      # ← ここを prompt に
+        title=reading.get("title", ""),
+        prompt=prompt_text,          # ← HTMLと一致させる
         question=question_text,
-        passage_id=reading["id"],
+        passage_id=reading.get("id", 0),
         user_id=user_id,
         current_user=current_user
     )
