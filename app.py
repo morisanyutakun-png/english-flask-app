@@ -886,20 +886,17 @@ def writing_result():
 
 @app.route("/ranking")
 def ranking():
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            c = conn.cursor()
-            c.execute("""
-                SELECT u.username, AVG(s.score) as avg_score
-                FROM student_answers s
-                JOIN users u ON s.user_id = u.id
-                GROUP BY u.id
-                ORDER BY avg_score DESC LIMIT 10
-            """)
-            ranking_data = c.fetchall()
-    except Exception as e:
-        logger.error("Ranking error: %s", e)
-        ranking_data = []
+    with sqlite3.connect(DB_FILE) as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT users.username, AVG(student_answers.score) as avg_score
+            FROM student_answers
+            JOIN users ON student_answers.user_id = users.id
+            GROUP BY users.username
+            ORDER BY avg_score DESC
+            LIMIT 10
+        """)
+        ranking_data = c.fetchall()
     return render_template("ranking.html", ranking=ranking_data)
 
 @app.route("/logout")
