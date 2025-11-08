@@ -254,21 +254,23 @@ def reading_quiz():
     user_id = session.get("user_id", 0)
 
     # DBからランダムに1件取得
-    with sqlite3.connect("reading_quiz.db") as conn:
+    with sqlite3.connect(READING_DB) as conn:
         c = conn.cursor()
+        # 新しいテーブル名: reading_passages
         c.execute(
-            "SELECT id, title, text, question, correct_answer FROM reading_texts ORDER BY RANDOM() LIMIT 1"
+            "SELECT id, passage, question, correct_answer FROM reading_passages ORDER BY RANDOM() LIMIT 1"
         )
         row = c.fetchone()
 
     if row:
-        passage_id, title, passage_text, question_text, correct_answer_text = row
+        passage_id, passage_text, question_text, correct_answer_text = row
+        title = ""  # titleカラムが無い場合は空文字
     else:
         passage_id = 0
-        title = ""
         passage_text = "This is a sample English passage for practice."
         question_text = "Please answer the question based on the passage."
         correct_answer_text = "Sample correct answer."
+        title = ""
 
     current_user = {"is_authenticated": bool(user_id)}
     return render_template(
@@ -283,7 +285,6 @@ def reading_quiz():
     )
 
 
-
 @app.route("/submit_reading", methods=["POST"])
 def submit_reading():
     try:
@@ -292,10 +293,10 @@ def submit_reading():
         user_answer = request.form.get("answer", "").strip()
 
         # DBから問題取得
-        with sqlite3.connect("reading_quiz.db") as conn:
+        with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
             c.execute(
-                "SELECT title, text, question, correct_answer FROM reading_texts WHERE id=?",
+                "SELECT passage, question, correct_answer FROM reading_passages WHERE id=?",
                 (passage_id,)
             )
             row = c.fetchone()
@@ -304,7 +305,8 @@ def submit_reading():
             flash("問題が見つかりません。")
             return redirect(url_for("reading_quiz"))
 
-        title, passage_text, question_text, correct_answer_text = row
+        passage_text, question_text, correct_answer_text = row
+        title = ""  # titleカラムがない場合は空文字
 
         # 空欄チェック
         passage_text = passage_text or "This is a sample English passage for practice."
@@ -315,7 +317,7 @@ def submit_reading():
         score, feedback = evaluate_reading(passage_text, question_text, correct_answer_text, user_answer)
 
         # DB保存
-        with sqlite3.connect("reading_quiz.db") as conn:
+        with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
             c.execute("""
                 INSERT INTO reading_answers
@@ -358,6 +360,7 @@ def reading_result():
         return redirect(url_for("reading_quiz"))
 
     return render_template("reading_result.html", **result)
+
 
 # ======================================================
 # JSON 抽出関数
