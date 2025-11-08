@@ -244,7 +244,7 @@ def get_random_reading():
     return {"id": None, "title": "エラー", "passage": "", "question": "", "correct_answer": ""}
 
 # ======================================================
-# === READING QUIZ ===
+# === READING QUIZ 修正版 ===
 # ======================================================
 @app.route("/reading_quiz")
 def reading_quiz():
@@ -253,30 +253,40 @@ def reading_quiz():
 
     user_id = session.get("user_id", 0)
 
-    # DBからランダムに1件取得
-    with sqlite3.connect(READING_DB) as conn:
-        c = conn.cursor()
-        # 新しいテーブル名: reading_passages
-        c.execute(
-            "SELECT id, passage, question, correct_answer FROM reading_passages ORDER BY RANDOM() LIMIT 1"
-        )
-        row = c.fetchone()
+    try:
+        # DBからランダムに1件取得（reading_textsテーブルに変更）
+        with sqlite3.connect(READING_DB) as conn:
+            c = conn.cursor()
+            c.execute(
+                "SELECT id, text FROM reading_texts ORDER BY RANDOM() LIMIT 1"
+            )
+            row = c.fetchone()
 
-    if row:
-        passage_id, passage_text, question_text, correct_answer_text = row
-        title = ""  # titleカラムが無い場合は空文字
-    else:
+        if row:
+            passage_id, passage_text = row
+            title = ""           # titleカラムは存在しないので空文字
+            question_text = ""   # questionカラムもないので空文字
+            correct_answer_text = ""  # correct_answerも空文字
+        else:
+            passage_id = 0
+            title = ""
+            passage_text = "This is a sample English passage for practice."
+            question_text = "Please answer the question based on the passage."
+            correct_answer_text = "Sample correct answer."
+
+    except Exception as e:
+        logger.exception("reading_quiz DB error")
         passage_id = 0
+        title = ""
         passage_text = "This is a sample English passage for practice."
         question_text = "Please answer the question based on the passage."
         correct_answer_text = "Sample correct answer."
-        title = ""
 
     current_user = {"is_authenticated": bool(user_id)}
     return render_template(
         "reading_quiz.html",
         title=title,
-        prompt=passage_text,       # HTMLで {{ prompt }} に一致
+        prompt=passage_text,
         question=question_text,
         passage_id=passage_id,
         correct_answer=correct_answer_text,
@@ -296,7 +306,7 @@ def submit_reading():
         with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
             c.execute(
-                "SELECT passage, question, correct_answer FROM reading_passages WHERE id=?",
+                "SELECT text FROM reading_texts WHERE id=?",
                 (passage_id,)
             )
             row = c.fetchone()
@@ -305,8 +315,10 @@ def submit_reading():
             flash("問題が見つかりません。")
             return redirect(url_for("reading_quiz"))
 
-        passage_text, question_text, correct_answer_text = row
-        title = ""  # titleカラムがない場合は空文字
+        passage_text = row[0]
+        title = ""                 # titleカラムなし
+        question_text = ""         # questionカラムなし
+        correct_answer_text = ""   # correct_answerなし
 
         # 空欄チェック
         passage_text = passage_text or "This is a sample English passage for practice."
@@ -336,7 +348,7 @@ def submit_reading():
         # sessionに結果保存
         session["reading_result"] = {
             "title": title,
-            "prompt": passage_text,          # HTML側 {{ prompt }}
+            "prompt": passage_text,
             "question": question_text,
             "user_answer": user_answer,
             "correct_answer": correct_answer_text,
@@ -360,7 +372,6 @@ def reading_result():
         return redirect(url_for("reading_quiz"))
 
     return render_template("reading_result.html", **result)
-
 
 # ======================================================
 # JSON 抽出関数
