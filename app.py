@@ -274,13 +274,14 @@ def reading_quiz():
     return render_template(
         "reading_quiz.html",
         title=title,
-        prompt=passage_text,        # HTML側 {{ prompt }}
+        prompt=passage_text,       # HTMLで {{ prompt }} に一致
         question=question_text,
         passage_id=passage_id,
         correct_answer=correct_answer_text,
         user_id=user_id,
         current_user=current_user
     )
+
 
 
 @app.route("/submit_reading", methods=["POST"])
