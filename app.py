@@ -506,68 +506,65 @@ def evaluate_answer(word, correct_meaning, user_answer, pos_from_db=None):
 # ======================================================
 # Gemini 簡易採点関数（リーディング用・安全版）
 # ======================================================
-def evaluate_reading(passage, question, correct_answer, user_answer):
+def generate_and_evaluate_reading(passage: str, user_answer: str):
     """
-    Gemini で英文読解を採点。失敗時は簡易採点にフォールバック。
+    Gemini で模範日本語訳を生成し、採点も行う。
+    失敗時はフォールバック。
     戻り値:
+      correct_answer_text:str
       score:int
       feedback:str
     """
-    if not user_answer:
-        return 0, "回答が入力されていません。"
+    correct_answer_text = "（模範訳生成失敗）"
+    score = 60
+    feedback = "採点エラーにより簡易スコアを返しました。"
 
-    # --- Gemini 未使用時 or API Key 無し ---
+    if not user_answer:
+        return correct_answer_text, 0, "回答が入力されていません。"
+
     if not HAS_GEMINI:
-        # 正答文字列が含まれていれば高得点、それ以外は中点
-        score = 100 if correct_answer.strip().lower() in user_answer.strip().lower() else 60
-        return score, "（簡易採点）内容を確認してください。"
+        # Gemini API が使えない場合
+        correct_answer_text = "（模範訳未生成）"
+        score = 60
+        feedback = "（簡易採点）内容を確認してください。"
+        return correct_answer_text, score, feedback
 
     try:
         model = genai.GenerativeModel("gemini-2.5-flash")
         prompt = f"""
-次の英文読解問題の採点をしてください。JSON形式で結果を返してください。
+次の英文読解問題について、
+1. 日本語の模範訳を作成
+2. 学生の回答を採点
+JSON形式で返すこと。余計なテキストは含めない。
 文章:
 {passage}
-
-質問:
-{question}
-
-正答:
-{correct_answer}
 
 学生の回答:
 {user_answer}
 
-出力フォーマット:
+出力形式:
 {{
+  "correct_answer": "",
   "score": 0,
   "feedback": ""
 }}
-
-余計なテキストや説明文は一切含めず、JSONのみを返してください。
 """
-        # Gemini API呼び出し
         res = model.generate_content(prompt)
         raw_text = res.text or ""
-        logger.info("Gemini raw reading response: %s", raw_text)
+        logger.info("Gemini raw response: %s", raw_text)
 
-        # JSON解析を安全に行う
+        # JSON抽出
         match = re.search(r"\{.*\}", raw_text, re.S)
         if match:
             data = json.loads(match.group(0))
+            correct_answer_text = data.get("correct_answer") or "（模範訳生成失敗）"
             score = max(0, min(100, int(data.get("score", 0))))
             feedback = data.get("feedback") or "採点結果なし"
-        else:
-            raise ValueError("JSON parse failed or empty response")
-
-        return score, feedback
 
     except Exception as e:
-        logger.error("Gemini reading error, fallback to simple scoring: %s", e)
-        # 簡易採点
-        score = 60
-        feedback = "採点エラーにより簡易スコアを返しました。"
-        return score, feedback
+        logger.exception("Gemini generate_and_evaluate_reading error: %s", e)
+
+    return correct_answer_text, score, feedback
 
 # ======================================================
 # DB操作系
