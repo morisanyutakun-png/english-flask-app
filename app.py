@@ -282,16 +282,23 @@ def evaluate_writing(prompt_text, answer):
         return score, "（簡易採点）改善点を確認してください", "例文は参考"
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
-        res = model.generate_content(f"お題:{prompt_text}\n回答:{answer}\nJSONで返して")
+        prompt = f"お題:{prompt_text}\n回答:{answer}\nJSON形式で返してください"
+        res = model.generate_content(prompt)
+        logger.info("Gemini raw response: %s", res.text)
         data = parse_json_from_text(res.text or "")
-        return (
-            max(0, min(100, int(data.get("score", 0)))),
-            data.get("feedback", ""),
-            data.get("correct_example", ""),
-        )
+        if not data:
+            raise ValueError("JSON parse failed")
+        score = max(0, min(100, int(data.get("score", 0))))
+        feedback = data.get("feedback", "（採点結果なし）")
+        correct_example = data.get("correct_example", "")
+        return score, feedback, correct_example
     except Exception as e:
         logger.error("Gemini writing error: %s", e)
-        return 0, "採点エラー", ""
+        # 確実に簡易採点
+        score = min(100, len(answer) * 2)
+        feedback = "採点エラーにより簡易採点を行いました。"
+        correct_example = "My greatest wish is to see the world."
+        return score, feedback, correct_example
 
 # ======================================================
 # DB操作系
