@@ -292,6 +292,7 @@ def submit_reading():
         user_id = session.get("user_id", 0)
         passage_id = int(request.form.get("passage_id", 0))
         user_answer = request.form.get("answer", "").strip()
+        question = request.form.get("question", "").strip()  # ここを追加
 
         # =========================
         # DBから英文取得
@@ -304,21 +305,15 @@ def submit_reading():
         passage_text = row["text"] if row else "This is a sample English passage for practice."
 
         # =========================
-        # Jeminiで模範日本語訳を生成（失敗しても処理続行）
+        # Geminiで模範日本語訳と採点
         # =========================
         try:
-            correct_answer_text = generate_japanese_translation(passage_text)
+            correct_answer_text, score, feedback = generate_and_evaluate_reading(
+                passage_text, user_answer, question
+            )
         except Exception:
-            logger.exception("generate_japanese_translation failed")
+            logger.exception("generate_and_evaluate_reading failed")
             correct_answer_text = "（模範訳生成失敗）"
-
-        # =========================
-        # 採点（失敗した場合はスコア0、フィードバックあり）
-        # =========================
-        try:
-            score, feedback = evaluate_reading(passage_text, "", correct_answer_text, user_answer)
-        except Exception:
-            logger.exception("evaluate_reading failed")
             score = 0
             feedback = "採点に失敗しました。"
 
@@ -346,7 +341,7 @@ def submit_reading():
         session["reading_result"] = {
             "title": "",
             "prompt": passage_text,
-            "question": "",
+            "question": question,
             "user_answer": user_answer or "（回答なし）",
             "correct_answer": correct_answer_text,
             "score": score,
@@ -365,6 +360,7 @@ def submit_reading():
         logger.exception("submit_reading error")
         flash("採点中にエラーが発生しました。もう一度お試しください。")
         return redirect(url_for("reading_quiz"))
+
 
 
 @app.route("/reading_result")
@@ -506,7 +502,7 @@ def evaluate_answer(word, correct_meaning, user_answer, pos_from_db=None):
 # ======================================================
 # Gemini で模範日本語訳生成＋採点（安全版・改良）
 # ======================================================
-def generate_and_evaluate_reading(passage: str, user_answer: str):
+def generate_and_evaluate_reading(passage: str, user_answer: str, question: str = ""):
     """
     Gemini で模範日本語訳を生成し、採点も行う。
     失敗時はフォールバック。
@@ -541,22 +537,20 @@ def generate_and_evaluate_reading(passage: str, user_answer: str):
         model = genai.GenerativeModel("gemini-2.5-flash")
 
         # ----------------------------
-        # プロンプトをより明確に
+        # プロンプトを明確化
         # ----------------------------
         prompt = f"""
-次の英文読解問題について、以下を行ってください：
-1. 学生の回答に対する日本語の模範訳を "correct_answer" に入れる
-2. 学生の回答を採点し、"score" に点数（0-100）を入れる
-3. 採点コメントを "feedback" に入れる
-
-JSON形式で返すこと。余計な説明は絶対に入れない。
-
+以下の英文読解問題について、学生の回答に対する日本語の模範訳と採点結果を返してください。
 文章:
 {passage}
+
+質問:
+{question or '（質問なし）'}
 
 学生の回答:
 {user_answer}
 
+JSON形式のみで出力してください。余計な説明は不要です。
 出力形式:
 {{
   "correct_answer": "",
@@ -570,9 +564,9 @@ JSON形式で返すこと。余計な説明は絶対に入れない。
         logger.info("Gemini raw response: %s", raw_text)
 
         # ----------------------------
-        # JSON抽出（複数{}があっても最初の完全なJSONを取得）
+        # JSON抽出（最初の{}のみ、安全にパース）
         # ----------------------------
-        match = re.search(r"\{(?:[^{}]|(?R))*\}", raw_text, re.S)
+        match = re.search(r"\{.*?\}", raw_text, re.S)
         if match:
             try:
                 data = json.loads(match.group(0))
@@ -591,6 +585,7 @@ JSON形式で返すこと。余計な説明は絶対に入れない。
     # 必ず3つ返す
     # ----------------------------
     return correct_answer_text, score, feedback
+
 
 # ======================================================
 # DB操作系
