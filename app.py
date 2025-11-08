@@ -531,16 +531,12 @@ def submit_writing():
 
         # --- 採点 ---
         if not user_answer:
-            score = 0
-            feedback = "回答が入力されていません。"
+        score = 0
+        feedback = "回答が入力されていません。"
+        correct_example = ""
         else:
-            score = min(100, len(user_answer) * 2)
-            if score >= 90:
-                feedback = "非常に良く書けています！文法も自然で読みやすいです。"
-            elif score >= 60:
-                feedback = "良い回答です。少しだけ自然な言い回しを意識しましょう。"
-            else:
-                feedback = "改善の余地があります。基本的な文法と語彙を見直してみましょう。"
+    # Gemini 採点関数を呼ぶ
+    score, feedback, correct_example = evaluate_writing(prompt, user_answer)
 
         correct_example = "My greatest wish is to see the world."
         correct_meaning = "願望、願う"
