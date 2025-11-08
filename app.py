@@ -371,7 +371,25 @@ def reading_result():
         flash("結果がありません。")
         return redirect(url_for("reading_quiz"))
 
-    return render_template("reading_result.html", **result)
+    # ゲスト判定
+    is_guest = session.get("user_id", 0) == 0
+
+    # HTMLで必要なキーにリネーム
+    context = {
+        "title": result.get("title", ""),
+        "prompt": result.get("prompt", ""),
+        "question": result.get("question", ""),
+        "answer": result.get("user_answer", ""),          # <- ここ修正
+        "correct_example": result.get("correct_answer", ""), # <- ここ修正
+        "score": result.get("score", 0),
+        "feedback": result.get("feedback", ""),
+        "user_id": session.get("user_id", 0),
+        "is_guest": is_guest,
+        "prompt_id": session.get("reading_result", {}).get("passage_id", 0),
+        "added_to_weak": False
+    }
+
+    return render_template("reading_result.html", **context)
 
 # ======================================================
 # JSON 抽出関数
