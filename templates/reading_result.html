@@ -59,7 +59,7 @@
 
     <div class="card">
       <h3>📖 英文</h3>
-      <p>{{ prompt|default('英文がありません') }}</p>
+      <p id="reading-prompt">{{ prompt|default('英文がありません') }}</p>
     </div>
 
     <div class="card">
@@ -69,9 +69,11 @@
 
     <div class="card">
       <h3>📝 模範日本語訳
-        <button class="tts-btn" id="tts-example-btn">🎵 英文を再生</button>
+        <button class="tts-btn" id="tts-english-btn">🎵 英文を再生</button>
       </h3>
-      <p id="example-sentence">{{ correct_example|default('') }}</p>
+      <p id="example-jp">{{ correct_example|default('') }}</p>
+      <!-- 非表示で英文保持 -->
+      <p id="example-en" style="display:none;">{{ prompt|default('') }}</p>
     </div>
 
     <div class="card">
@@ -118,16 +120,24 @@
     function loadVoices(){ voices=speechSynthesis.getVoices(); if(!voices.length)setTimeout(loadVoices,100);}
     speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
+
     function playEnglishTTS(text){
       if(!text) return;
       if(!voices.length){ voices = speechSynthesis.getVoices(); setTimeout(()=>playEnglishTTS(text),100); return; }
       const utter = new SpeechSynthesisUtterance(text);
-      utter.lang='en-US'; utter.rate=0.95; utter.pitch=1.0; utter.volume=1.0;
-      const enVoice=voices.find(v=>v.lang.startsWith('en')&&v.name.includes('Google'))||voices.find(v=>v.lang.startsWith('en'));
-      if(enVoice) utter.voice=enVoice;
+      utter.lang='en-US';
+      utter.rate=0.95;
+      utter.pitch=1.0;
+      utter.volume=1.0;
+      const enVoice=voices.find(v=>v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v=>v.lang.startsWith('en'));
+      if(enVoice) utter.voice = enVoice;
       speechSynthesis.speak(utter);
     }
-    document.getElementById('tts-example-btn')?.addEventListener('click',()=>{ playEnglishTTS(document.getElementById('example-sentence')?.textContent); });
+
+    document.getElementById('tts-english-btn')?.addEventListener('click', () => {
+      const text = document.getElementById('example-en')?.textContent;
+      playEnglishTTS(text);
+    });
   </script>
 </body>
 </html>
