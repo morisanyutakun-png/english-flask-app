@@ -523,6 +523,9 @@ def submit_writing():
         user_id = session.get("user_id", 0)
         is_guest = session.get("is_guest", True)
 
+        logger.info("submit_writing called: user_id=%s, prompt_id=%s, answer_len=%d",
+                    user_id, prompt_id, len(user_answer))
+
         # 採点
         if not user_answer:
             score = 0
@@ -552,6 +555,8 @@ def submit_writing():
             "is_guest": is_guest
         }
 
+        logger.info("writing_result stored in session: %s", session['writing_result'])
+
         # GET の結果ページにリダイレクト
         return redirect(url_for("writing_result"))
 
@@ -567,12 +572,16 @@ def writing_result():
     result = session.pop('writing_result', None)
     if not result:
         flash("表示する結果がありません。")
+        logger.warning("writing_result not found in session")
         return redirect(url_for("writing_quiz"))
+
+    logger.info("writing_result retrieved from session: %s", result)
 
     return render_template(
         "writing_result.html",
         **result  # session から取り出した値を展開
     )
+
 
 
 @app.route("/ranking")

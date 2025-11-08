@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <title>採点結果</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=37">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=38">
   <style>
-    body { font-family: "Hiragino Sans","Noto Sans JP",sans-serif; margin:0; padding:0; background: linear-gradient(135deg,#eef2ff,#f8fafc); color:#333; }
+    body { font-family:"Hiragino Sans","Noto Sans JP",sans-serif; margin:0; padding:0; background: linear-gradient(135deg,#eef2ff,#f8fafc); color:#333; }
     .container { max-width:720px; margin:60px auto; padding:20px; display:flex; flex-direction:column; align-items:center; position:relative; }
     .logout-btn { position: fixed; top:20px; right:20px; background: linear-gradient(135deg,#dc2626,#b91c1c); color:white; border:none; border-radius:12px; padding:10px 16px; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(220,38,38,0.3); transition:0.3s; z-index:100; }
     .logout-btn:hover { transform: translateY(-2px); box-shadow:0 6px 20px rgba(220,38,38,0.4); }
@@ -34,7 +34,9 @@
   </style>
 </head>
 <body>
+  {% if not is_guest %}
   <button class="logout-btn" onclick="location.href='{{ url_for('logout') }}'">ログアウト</button>
+  {% endif %}
 
   <div class="container">
 
@@ -52,47 +54,46 @@
     <h1>採点結果</h1>
 
     <div class="score-box">
-      <h2 id="score" data-score="{{ score }}">0 点</h2>
+      <h2 id="score" data-score="{{ score|default(0) }}">0 点</h2>
     </div>
 
     <div class="card">
       <h3>📝 お題</h3>
-      <p>{{ prompt }}</p>
+      <p>{{ prompt|default('お題がありません') }}</p>
     </div>
 
     <div class="card">
       <h3>✏ あなたの回答</h3>
-      <p>{{ answer }}</p>
+      <p>{{ answer|default('（回答なし）') }}</p>
     </div>
 
     <div class="card">
       <h3>📖 模範回答
         <button class="tts-btn" id="tts-example-btn">🎵 英語を再生</button>
       </h3>
-      <p id="example-sentence">{{ correct_example }}</p>
+      <p id="example-sentence">{{ correct_example|default('') }}</p>
     </div>
 
     <div class="card">
       <h3>🧭 アドバイス</h3>
-      <p>{{ feedback }}</p>
+      <p>{{ feedback|default('') }}</p>
     </div>
 
     {% if not is_guest and score < 50 %}
-<div class="card">
-  <h3>💡 苦手モード登録</h3>
-  <form method="POST" action="{{ url_for('add_to_weak') }}">
-    <input type="hidden" name="user_id" value="{{ user_id }}">
-    <input type="hidden" name="prompt_id" value="{{ prompt_id }}">
-    <label>
-      <input type="checkbox" name="add_to_weak" value="1" {% if added_to_weak %}checked{% endif %}>
-      この問題を苦手モードに追加する
-    </label>
-    <br><br>
-    <button type="submit" class="btn btn-secondary">保存</button>
-  </form>
-</div>
-{% endif %}
-
+    <div class="card">
+      <h3>💡 苦手モード登録</h3>
+      <form method="POST" action="{{ url_for('add_to_weak') }}">
+        <input type="hidden" name="user_id" value="{{ user_id|default(0) }}">
+        <input type="hidden" name="prompt_id" value="{{ prompt_id|default(0) }}">
+        <label>
+          <input type="checkbox" name="add_to_weak" value="1" {% if added_to_weak %}checked{% endif %}>
+          この問題を苦手モードに追加する
+        </label>
+        <br><br>
+        <button type="submit" class="btn btn-secondary">保存</button>
+      </form>
+    </div>
+    {% endif %}
 
     <div class="btn-group">
       <a href="{{ url_for('index') }}" class="btn btn-primary">トップに戻る</a>
