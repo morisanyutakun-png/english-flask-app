@@ -272,24 +272,50 @@ def submit_reading():
         passage_id = int(request.form.get("passage_id", 0))
         user_answer = request.form.get("answer", "").strip()
 
+        # DBから問題取得
         with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
-            c.execute("SELECT title, passage, question, correct_answer FROM reading_passages WHERE id=?", (passage_id,))
+            c.execute(
+                "SELECT title, passage, question, correct_answer FROM reading_passages WHERE id=?",
+                (passage_id,)
+            )
             row = c.fetchone()
+
         if not row:
+            logger.warning("submit_reading: passage_id %s not found", passage_id)
             flash("問題が見つかりません。")
             return redirect(url_for("reading_quiz"))
 
         title, passage, question, correct_answer = row
+
+        # passage が空の場合は仮英文を設定
+        if not passage:
+            passage = "This is a sample English passage for practice."
+
+        if not question:
+            question = "Please answer the question based on the passage."
+
+        if not correct_answer:
+            correct_answer = "Sample correct answer."
+
+        # 採点
         score, feedback = evaluate_reading(passage, question, correct_answer, user_answer)
 
         # DB保存
         with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
             c.execute("""
-                INSERT INTO reading_answers (user_id, passage_id, user_answer, score, feedback, attempt_date)
+                INSERT INTO reading_answers
+                (user_id, passage_id, user_answer, score, feedback, attempt_date)
                 VALUES (?,?,?,?,?,?)
-            """, (user_id, passage_id, user_answer, score, feedback, datetime.datetime.utcnow().isoformat()))
+            """, (
+                user_id,
+                passage_id,
+                user_answer,
+                score,
+                feedback,
+                datetime.datetime.utcnow().isoformat()
+            ))
             conn.commit()
 
         # sessionに結果保存
@@ -302,7 +328,9 @@ def submit_reading():
             "score": score,
             "feedback": feedback
         }
+
         return redirect(url_for("reading_result"))
+
     except Exception as e:
         logger.exception("submit_reading error")
         flash("採点中にエラーが発生しました。")
