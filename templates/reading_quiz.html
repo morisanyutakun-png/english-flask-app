@@ -73,7 +73,7 @@
 
     <!-- メインカード -->
     <div class="quiz-card">
-      <p class="prompt">📖 英文: {{ passage or "英文がありません" }}</p>
+      <p class="prompt">📖 英文: {{ prompt or "英文がありません" }}</p>
 
       <form id="readingForm" method="POST" action="{{ url_for('submit_reading') }}">
         <textarea name="answer" rows="5" placeholder="ここに日本語訳を入力..." required></textarea>
