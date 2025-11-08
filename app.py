@@ -252,22 +252,36 @@ def reading_quiz():
         return redirect(url_for("login"))
 
     user_id = session.get("user_id", 0)
-    reading = get_random_reading()
 
-    # passage が空なら仮英文を設定
-    prompt_text = reading.get("passage") or "This is a sample English passage for practice."
-    question_text = reading.get("question") or "Please answer the question based on the passage."
+    # DBからランダムに1件取得
+    with sqlite3.connect("reading_quiz.db") as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, title, text, question, correct_answer FROM reading_texts ORDER BY RANDOM() LIMIT 1"
+        )
+        row = c.fetchone()
+
+    if row:
+        passage_id, title, passage_text, question_text, correct_answer_text = row
+    else:
+        passage_id = 0
+        title = ""
+        passage_text = "This is a sample English passage for practice."
+        question_text = "Please answer the question based on the passage."
+        correct_answer_text = "Sample correct answer."
 
     current_user = {"is_authenticated": bool(user_id)}
     return render_template(
         "reading_quiz.html",
-        title=reading.get("title", ""),
-        prompt=prompt_text,          # ← HTMLと一致させる
+        title=title,
+        prompt=passage_text,        # HTML側 {{ prompt }}
         question=question_text,
-        passage_id=reading.get("id", 0),
+        passage_id=passage_id,
+        correct_answer=correct_answer_text,
         user_id=user_id,
         current_user=current_user
     )
+
 
 @app.route("/submit_reading", methods=["POST"])
 def submit_reading():
@@ -277,31 +291,30 @@ def submit_reading():
         user_answer = request.form.get("answer", "").strip()
 
         # DBから問題取得
-        with sqlite3.connect(READING_DB) as conn:
+        with sqlite3.connect("reading_quiz.db") as conn:
             c = conn.cursor()
             c.execute(
-                "SELECT title, passage, question, correct_answer FROM reading_passages WHERE id=?",
+                "SELECT title, text, question, correct_answer FROM reading_texts WHERE id=?",
                 (passage_id,)
             )
             row = c.fetchone()
 
         if not row:
-            logger.warning("submit_reading: passage_id %s not found", passage_id)
             flash("問題が見つかりません。")
             return redirect(url_for("reading_quiz"))
 
-        title, passage, question, correct_answer = row
+        title, passage_text, question_text, correct_answer_text = row
 
-        # passage が空の場合は仮英文を設定
-        prompt_text = passage or "This is a sample English passage for practice."
-        question_text = question or "Please answer the question based on the passage."
-        correct_answer_text = correct_answer or "Sample correct answer."
+        # 空欄チェック
+        passage_text = passage_text or "This is a sample English passage for practice."
+        question_text = question_text or "Please answer the question based on the passage."
+        correct_answer_text = correct_answer_text or "Sample correct answer."
 
         # 採点
-        score, feedback = evaluate_reading(prompt_text, question_text, correct_answer_text, user_answer)
+        score, feedback = evaluate_reading(passage_text, question_text, correct_answer_text, user_answer)
 
         # DB保存
-        with sqlite3.connect(READING_DB) as conn:
+        with sqlite3.connect("reading_quiz.db") as conn:
             c = conn.cursor()
             c.execute("""
                 INSERT INTO reading_answers
@@ -320,7 +333,7 @@ def submit_reading():
         # sessionに結果保存
         session["reading_result"] = {
             "title": title,
-            "prompt": prompt_text,           # ← HTML側の {{ prompt }} に合わせる
+            "prompt": passage_text,          # HTML側 {{ prompt }}
             "question": question_text,
             "user_answer": user_answer,
             "correct_answer": correct_answer_text,
@@ -341,7 +354,6 @@ def reading_result():
     result = session.get("reading_result")
     if not result:
         flash("結果がありません。")
-        logger.warning("reading_result not found in session")
         return redirect(url_for("reading_quiz"))
 
     return render_template("reading_result.html", **result)
