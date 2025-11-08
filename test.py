@@ -1,7 +1,5 @@
-import logging
-logging.basicConfig(level=logging.INFO)
+import os
+from flask import Flask
 
-try:
-    x = int("abc")
-except Exception as e:
-    logging.error("例外発生: %s", e, exc_info=True)
+app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev_secret_for_local_only")  # ローカルはデフォルトでOK
