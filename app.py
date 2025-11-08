@@ -516,7 +516,7 @@ def submit_writing():
     try:
         # --- ユーザ入力取得 ---
         user_answer = request.form.get("answer", "").strip()
-        prompt = request.form.get("prompt", "").strip()
+        prompt_text = request.form.get("prompt", "").strip()
         try:
             prompt_id = int(request.form.get("prompt_id") or 0)
         except Exception:
@@ -531,20 +531,32 @@ def submit_writing():
 
         # --- 採点 ---
         if not user_answer:
-        score = 0
-        feedback = "回答が入力されていません。"
-        correct_example = ""
+            score = 0
+            feedback = "回答が入力されていません。"
+            correct_example = ""
+            correct_meaning = ""
         else:
-    # Gemini 採点関数を呼ぶ
-    score, feedback, correct_example = evaluate_writing(prompt, user_answer)
-
-        correct_example = "My greatest wish is to see the world."
-        correct_meaning = "願望、願う"
+            try:
+                # Gemini 採点を呼ぶ
+                score, feedback, correct_example = evaluate_writing(prompt_text, user_answer)
+                # correct_example が dict の場合もあるので str に統一
+                if isinstance(correct_example, dict):
+                    correct_example_text = correct_example.get("en", "")
+                else:
+                    correct_example_text = correct_example
+                correct_example = correct_example_text
+                correct_meaning = "願望、願う"  # 必要に応じて Gemini から取得可
+            except Exception as e:
+                logger.error("Gemini採点失敗: %s", e)
+                score = min(100, len(user_answer) * 2)
+                feedback = "採点エラーにより簡易採点を行いました。"
+                correct_example = "My greatest wish is to see the world."
+                correct_meaning = "願望、願う"
 
         # --- 結果を session に保存して GET にリダイレクト ---
         session['writing_result'] = {
             "score": score,
-            "prompt": prompt,
+            "prompt": prompt_text,
             "answer": user_answer,
             "correct_example": correct_example,
             "correct_meaning": correct_meaning,
@@ -561,7 +573,6 @@ def submit_writing():
         logger.exception("submit_writing error")
         flash("採点中にエラーが発生しました。")
         return redirect(url_for("writing_quiz"))
-
 
 # --- GET: 結果表示 ---
 @app.route("/writing_result")
