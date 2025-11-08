@@ -513,13 +513,38 @@ def writing_quiz():
 @app.route("/submit_writing", methods=["POST"])
 def submit_writing():
     try:
+        # -----------------------------
+        # ユーザー入力の取得
+        # -----------------------------
         user_answer = request.form.get("answer", "").strip()
         prompt = request.form.get("prompt", "").strip()
-        prompt_id = int(request.form.get("prompt_id") or 0)
-        user_id = session.get("user_id", 0)
+        # prompt_id を安全に int に
+        try:
+            prompt_id = int(request.form.get("prompt_id") or 0)
+        except Exception:
+            prompt_id = 0
+
+        # user_id: session 優先
+        user_id = session.get("user_id")
+        if user_id is None:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except Exception:
+                user_id = 0
+
         is_guest = session.get("is_guest", True)
 
-        # 採点
+        logger.info(
+            "submit_writing called: user_id=%s prompt_id=%s prompt=%s answer_len=%d",
+            str(user_id),
+            str(prompt_id),
+            prompt[:50],
+            len(user_answer)
+        )
+
+        # -----------------------------
+        # 採点処理（仮ロジック）
+        # -----------------------------
         if not user_answer:
             score = 0
             feedback = "回答が入力されていません。"
@@ -535,22 +560,47 @@ def submit_writing():
         correct_example = "My greatest wish is to see the world."
         correct_meaning = "願望、願う"
 
-        # DB保存（省略）
+        # -----------------------------
+        # DB保存（失敗しても継続）
+        # -----------------------------
+        try:
+            with sqlite3.connect(WRITING_DB) as conn:
+                c = conn.cursor()
+                c.execute(
+                    """INSERT INTO writing_answers
+                    (user_id, prompt_id, answer, score, feedback, correct_example, attempt_date, is_wrong)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (
+                        user_id or 0,
+                        prompt_id,
+                        user_answer,
+                        score,
+                        feedback,
+                        correct_example,
+                        datetime.datetime.utcnow().isoformat(),
+                        1 if score < 50 else 0
+                    ),
+                )
+                conn.commit()
+        except Exception as db_e:
+            logger.warning("Failed to save writing_answers: %s", db_e)
 
-        # --- ここでGETにリダイレクト ---
-        # フラッシュメッセージやsessionに結果を一時保存して結果ページで取り出す方法もあり
-        session['writing_result'] = {
-            "score": score,
-            "prompt": prompt,
-            "answer": user_answer,
-            "correct_example": correct_example,
-            "correct_meaning": correct_meaning,
-            "feedback": feedback,
-            "user_id": user_id,
-            "prompt_id": prompt_id,
-            "is_guest": is_guest
-        }
-        return redirect(url_for("writing_result"))
+        # -----------------------------
+        # 結果画面へレンダリング
+        # -----------------------------
+        return render_template(
+            "writing_result.html",
+            score=score,
+            prompt=prompt or "No prompt",
+            answer=user_answer or "（回答なし）",
+            correct_example=correct_example,
+            correct_meaning=correct_meaning,
+            feedback=feedback,
+            user_id=user_id,
+            prompt_id=prompt_id,
+            is_guest=is_guest,
+            added_to_weak=False
+        )
 
     except Exception as e:
         logger.exception("submit_writing error")

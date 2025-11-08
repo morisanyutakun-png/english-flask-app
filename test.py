@@ -1,12 +1,7 @@
-import sqlite3
-DB_FILE = "/tmp/english_learning.db"
+import logging
+logging.basicConfig(level=logging.INFO)
 
-with sqlite3.connect(DB_FILE) as conn:
-    c = conn.cursor()
-    c.execute("SELECT * FROM users;")
-    users = c.fetchall()
-    print("users table:", users)
-
-    c.execute("SELECT * FROM student_answers;")
-    answers = c.fetchall()
-    print("student_answers table:", answers)
+try:
+    x = int("abc")
+except Exception as e:
+    logging.error("例外発生: %s", e, exc_info=True)
