@@ -21,18 +21,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 # ======================================================
-# DB 設定（Render / Cloud Run対応）
+# DB 設定
 # ======================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DB_FILE = os.path.join(BASE_DIR, "english_learning.db")
 REPO_WRITING_DB = os.path.join(BASE_DIR, "writing_quiz.db")
+REPO_READING_DB = os.path.join(BASE_DIR, "reading_quiz.db")
 TMP_DIR = "/tmp"
 DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
 WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
+READING_DB = os.path.join(TMP_DIR, "reading_quiz.db")
 
 os.makedirs(TMP_DIR, exist_ok=True)
-
-for src, dst in [(REPO_DB_FILE, DB_FILE), (REPO_WRITING_DB, WRITING_DB)]:
+for src, dst in [(REPO_DB_FILE, DB_FILE), (REPO_WRITING_DB, WRITING_DB), (REPO_READING_DB, READING_DB)]:
     if os.path.exists(src) and not os.path.exists(dst):
         shutil.copy(src, dst)
         logger.info(f"DB copied to tmp: {dst}")
@@ -150,8 +151,28 @@ def init_all_dbs():
             wrong_count INTEGER DEFAULT 0
         )'''
     ]
+    # === READING QUIZ 用テーブル ===
+    create_reading = [
+        '''CREATE TABLE IF NOT EXISTS reading_passages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT,
+            passage TEXT,
+            question TEXT,
+            correct_answer TEXT
+        )''',
+        '''CREATE TABLE IF NOT EXISTS reading_answers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            passage_id INTEGER,
+            user_answer TEXT,
+            score INTEGER,
+            feedback TEXT,
+            attempt_date TEXT
+        )'''
+    ]
     init_db_file(DB_FILE, create_users_words)
     init_db_file(WRITING_DB, create_writing)
+    init_db_file(READING_DB, create_reading)
 
     # words テーブルに pos カラムがない場合は追加
     ensure_word_pos_column(DB_FILE)
@@ -163,6 +184,137 @@ def init_all_dbs():
         conn.commit()
 
 init_all_dbs()
+
+
+# ======================================================
+# Gemini 簡易採点関数（リーディング用）
+# ======================================================
+def evaluate_reading(passage, question, correct_answer, user_answer):
+    if not user_answer:
+        return 0, "回答が入力されていません。"
+    if not HAS_GEMINI:
+        score = 100 if correct_answer.strip().lower() in user_answer.strip().lower() else 60
+        return score, "（簡易採点）内容を確認してください。"
+
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        prompt = f"""
+次の英文読解問題の採点をしてください。JSON形式で結果を返してください。
+
+文章:
+{passage}
+
+質問:
+{question}
+
+正答:
+{correct_answer}
+
+学生の回答:
+{user_answer}
+
+出力フォーマット:
+{{
+  "score": 0,
+  "feedback": ""
+}}
+"""
+        res = model.generate_content(prompt)
+        data = json.loads(re.search(r"\{.*\}", res.text, re.S).group(0))
+        score = int(data.get("score", 0))
+        feedback = data.get("feedback", "")
+        return score, feedback
+    except Exception as e:
+        logger.error("Gemini reading error: %s", e)
+        return 50, "採点に失敗したため簡易スコアを返しました。"
+
+# ======================================================
+# Utility
+# ======================================================
+def get_random_reading():
+    try:
+        with sqlite3.connect(READING_DB) as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, title, passage, question, correct_answer FROM reading_passages ORDER BY RANDOM() LIMIT 1")
+            row = c.fetchone()
+            if row:
+                return {"id": row[0], "title": row[1], "passage": row[2], "question": row[3], "correct_answer": row[4]}
+    except Exception as e:
+        logger.error("DB reading error: %s", e)
+    return {"id": None, "title": "エラー", "passage": "", "question": "", "correct_answer": ""}
+
+# ======================================================
+# === READING QUIZ ===
+# ======================================================
+@app.route("/reading_quiz")
+def reading_quiz():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    user_id = session.get("user_id", 0)
+    reading = get_random_reading()
+
+    current_user = {"is_authenticated": bool(user_id)}
+    return render_template(
+        "reading_quiz.html",
+        title=reading["title"],
+        passage=reading["passage"],
+        question=reading["question"],
+        passage_id=reading["id"],
+        user_id=user_id,
+        current_user=current_user
+    )
+
+@app.route("/submit_reading", methods=["POST"])
+def submit_reading():
+    try:
+        user_id = session.get("user_id", 0)
+        passage_id = int(request.form.get("passage_id", 0))
+        user_answer = request.form.get("answer", "").strip()
+
+        with sqlite3.connect(READING_DB) as conn:
+            c = conn.cursor()
+            c.execute("SELECT title, passage, question, correct_answer FROM reading_passages WHERE id=?", (passage_id,))
+            row = c.fetchone()
+        if not row:
+            flash("問題が見つかりません。")
+            return redirect(url_for("reading_quiz"))
+
+        title, passage, question, correct_answer = row
+        score, feedback = evaluate_reading(passage, question, correct_answer, user_answer)
+
+        # DB保存
+        with sqlite3.connect(READING_DB) as conn:
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO reading_answers (user_id, passage_id, user_answer, score, feedback, attempt_date)
+                VALUES (?,?,?,?,?,?)
+            """, (user_id, passage_id, user_answer, score, feedback, datetime.datetime.utcnow().isoformat()))
+            conn.commit()
+
+        # sessionに結果保存
+        session["reading_result"] = {
+            "title": title,
+            "passage": passage,
+            "question": question,
+            "user_answer": user_answer,
+            "correct_answer": correct_answer,
+            "score": score,
+            "feedback": feedback
+        }
+        return redirect(url_for("reading_result"))
+    except Exception as e:
+        logger.exception("submit_reading error")
+        flash("採点中にエラーが発生しました。")
+        return redirect(url_for("reading_quiz"))
+
+@app.route("/reading_result")
+def reading_result():
+    result = session.get("reading_result")
+    if not result:
+        flash("結果がありません。")
+        return redirect(url_for("reading_quiz"))
+    return render_template("reading_result.html", **result)
 
 # ======================================================
 # JSON 抽出関数
