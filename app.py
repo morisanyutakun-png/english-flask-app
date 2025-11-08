@@ -78,7 +78,7 @@ POS_JA = {
 }
 
 # ======================================================
-# DB 初期化関数
+# DB 初期化（テーブル作成 + 後方互換で pos カラム追加）
 # ======================================================
 def init_db_file(path, create_statements):
     with sqlite3.connect(path) as conn:
@@ -130,7 +130,9 @@ def init_all_dbs():
     create_writing = [
         '''CREATE TABLE IF NOT EXISTS writing_prompts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            prompt_text TEXT
+            prompt_text TEXT,
+            correct_example TEXT,
+            correct_meaning TEXT
         )''',
         '''CREATE TABLE IF NOT EXISTS writing_answers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -167,10 +169,11 @@ def parse_json_from_text(text):
         snippet = text[start:end]
         return json.loads(snippet)
     except Exception:
+        logger.warning("JSON parse failed; fallback to empty dict")
         return {}
 
 # ======================================================
-# 品詞正規化
+# 品詞文字列正規化関数
 # ======================================================
 def normalize_pos_string(raw):
     if not raw:
@@ -183,28 +186,66 @@ def normalize_pos_string(raw):
         token = re.match(r"[a-z]+", p)
         key = token.group(0) if token else p
         ja = POS_JA.get(key, None)
-        if ja and ja not in mapped:
+        if ja:
             mapped.append(ja)
-    return "・".join(mapped) if mapped else "その他"
+    seen = set()
+    result = []
+    for x in mapped:
+        if x not in seen:
+            seen.add(x)
+            result.append(x)
+    return "・".join(result) if result else "その他"
 
 # ======================================================
-# 英作文お題管理
+# 英単語採点関数
 # ======================================================
-PROMPTS = {
-    1: {
-        "prompt": "九九艦爆の後継機として1943年から戦線に投入され、急降下爆撃により連合軍艦艇に脅威を与えた",
-        "example": "The successor of the Kyu-Kyu Bomber was introduced in 1943 and threatened Allied ships with dive bombing.",
-        "meaning": "後継機、投入、急降下爆撃"
-    },
-    2: {
-        "prompt": "My greatest wish is to see the world.",
-        "example": "My greatest wish is to see the world.",
-        "meaning": "願望、願う"
-    },
-}
+def evaluate_answer(word, correct_meaning, user_answer, pos_from_db=None):
+    if not HAS_GEMINI:
+        score = 100 if (correct_meaning and correct_meaning in user_answer) else 60
+        feedback = "（簡易採点）" + ("Good!" if score >= 70 else "もう少し詳しく書いてみよう")
+        example = {"en": f"{word} の使用例（採点対象外）", "jp": ""}
+        pos_ja = normalize_pos_string(pos_from_db or "other")
+        return score, feedback, example, pos_ja, (correct_meaning or "")
+
+    try:
+        prompt = f"""
+単語: {word}
+正しい意味: {correct_meaning}
+回答: {user_answer}
+
+以下のJSONを必ず返してください:
+{{
+  "score": 95,
+  "feedback": "説明テキスト",
+  "example": "He gave his assurance that the project would be completed on time.",
+  "example_jp": "彼はそのプロジェクトが予定通り完了すると保証した。",
+  "pos": "noun, verb",
+  "simple_meaning": "保証、確信、自信"
+}}
+(注意) pos は英語のキーで複数ある場合はカンマ区切りで返してください。
+"""
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        res = model.generate_content(prompt)
+        data = parse_json_from_text(res.text or "")
+
+        score = max(0, min(100, int(data.get("score", 0))))
+        feedback = data.get("feedback", "")
+        example_en = data.get("example", f"{word} の使用例（採点対象外）")
+        example_jp = data.get("example_jp", "")
+        raw_pos = (data.get("pos") or pos_from_db or "other")
+        pos_ja = normalize_pos_string(raw_pos)
+        simple_meaning = data.get("simple_meaning", correct_meaning or "")
+        example = {"en": example_en, "jp": example_jp}
+
+        return score, feedback, example, pos_ja, simple_meaning
+    except Exception as e:
+        logger.error("Gemini Error: %s", e)
+        example = {"en": f"{word} の使用例", "jp": ""}
+        pos_ja = normalize_pos_string(pos_from_db or "other")
+        return 0, "採点エラー", example, pos_ja, (correct_meaning or "")
 
 # ======================================================
-# 英作文採点
+# Writing 採点関数（Gemini対応）
 # ======================================================
 def evaluate_writing(prompt_text, answer):
     if not HAS_GEMINI:
@@ -224,7 +265,7 @@ def evaluate_writing(prompt_text, answer):
         return 0, "採点エラー", ""
 
 # ======================================================
-# ランダム単語 / お題取得
+# DB操作系
 # ======================================================
 def get_random_word():
     try:
@@ -239,7 +280,9 @@ def get_random_word():
                     return row
             c.execute("SELECT id, word, definition_ja FROM words ORDER BY RANDOM() LIMIT 1")
             row = c.fetchone()
-            return row if row else None
+            if row:
+                return (row[0], row[1], row[2], None)
+            return None
     except Exception as e:
         logger.error("DB get_random_word error: %s", e)
         return None
@@ -250,7 +293,7 @@ def get_average_score(user_id):
             c = conn.cursor()
             c.execute("SELECT AVG(score) FROM student_answers WHERE user_id=?", (user_id,))
             r = c.fetchone()
-            return round(r[0],2) if r and r[0] else 0
+            return round(r[0], 2) if r and r[0] else 0
     except Exception as e:
         logger.error("DB avg error: %s", e)
         return 0
@@ -267,7 +310,108 @@ def get_random_prompt():
         return {"id": None, "text": "エラー"}
 
 # ======================================================
-# 各ページ & 認証
+# 認証
+# ======================================================
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute("SELECT id,password FROM users WHERE username=?", (username,))
+            row = c.fetchone()
+            if row and check_password_hash(row[1], password):
+                session.update({"user_id": row[0], "username": username, "is_guest": False})
+                return redirect(url_for("index"))
+        return render_template("login.html", error="ユーザー名かパスワードが違います")
+    return render_template("login.html")
+
+@app.route("/guest_login", methods=["POST"])
+def guest_login():
+    session.update({"user_id": 0, "username": "ゲスト", "is_guest": True})
+    return redirect(url_for("index"))
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        if not username or not password:
+            return render_template("register.html", error="必須項目です")
+        hashed = generate_password_hash(password)
+        try:
+            with sqlite3.connect(DB_FILE) as conn:
+                c = conn.cursor()
+                c.execute("SELECT id FROM users WHERE username=?", (username,))
+                if c.fetchone():
+                    return render_template("register.html", error="既に登録されています")
+                c.execute("INSERT INTO users (username,password) VALUES (?,?)", (username, hashed))
+                conn.commit()
+                flash("登録完了！ログインしてください")
+                return redirect(url_for("login"))
+        except Exception as e:
+            logger.error("Register Error: %s", e)
+            return render_template("register.html", error="登録中にエラー")
+    return render_template("register.html")
+
+# ======================================================
+# API
+# ======================================================
+@app.route("/api/submit_answer", methods=["POST"])
+def api_submit_answer():
+    try:
+        user_id = session.get("user_id", 0)
+        word_id = request.form.get("word_id")
+        answer = request.form.get("answer", "")
+
+        pos_from_db = None
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute("PRAGMA table_info(words)")
+            cols = [r[1] for r in c.fetchall()]
+            if "pos" in cols:
+                c.execute("SELECT word,definition_ja,pos FROM words WHERE id=?", (word_id,))
+                row = c.fetchone()
+                if not row:
+                    return jsonify({"error": "単語が見つかりません"}), 404
+                word, correct_meaning, pos_from_db = row
+            else:
+                c.execute("SELECT word,definition_ja FROM words WHERE id=?", (word_id,))
+                row = c.fetchone()
+                if not row:
+                    return jsonify({"error": "単語が見つかりません"}), 404
+                word, correct_meaning = row
+
+        score, feedback, example, pos_ja, simple_meaning = evaluate_answer(word, correct_meaning, answer, pos_from_db=pos_from_db)
+
+        with sqlite3.connect(DB_FILE) as conn:
+            c = conn.cursor()
+            c.execute(
+                """INSERT INTO student_answers (user_id,word_id,score,feedback,example,attempt_date)
+                   VALUES (?,?,?,?,?,?)""",
+                (user_id, word_id, score, feedback, example.get("en", ""), datetime.datetime.utcnow().isoformat()),
+            )
+            conn.commit()
+
+        avg = get_average_score(user_id)
+        return jsonify({
+            "score": score,
+            "feedback": feedback,
+            "example_en": example.get("en", ""),
+            "example_jp": example.get("jp", ""),
+            "pos": pos_ja,
+            "simple_meaning": simple_meaning,
+            "average_score": avg,
+            "user_answer": answer
+        })
+
+    except Exception as e:
+        logger.exception("api_submit_answer error")
+        return jsonify({"error": "internal server error"}), 500
+
+# ======================================================
+# 各ページ
 # ======================================================
 @app.route("/")
 @app.route("/index")
@@ -280,13 +424,31 @@ def index():
         is_guest=session.get("is_guest", False)
     )
 
+@app.route("/word_quiz")
+def word_quiz():
+    user_id = session.get("user_id", 0)
+    review = request.args.get("review") == "1"
+    word_data = get_random_word()
+    if not word_data:
+        flash("単語が登録されていません。")
+        return redirect(url_for("index"))
+    word_id, word, definition_ja, pos_from_db = word_data if len(word_data)==4 else (*word_data, None)
+    current_user = {"is_authenticated": bool(session.get("user_id"))}
+    return render_template(
+        "word_quiz.html",
+        word_id=word_id,
+        word=word,
+        average_score=get_average_score(user_id),
+        review=review,
+        current_user=current_user,
+    )
+
 @app.route("/writing_quiz")
 def writing_quiz():
     user_id = session.get("user_id", 0)
     review_mode = request.args.get("review") == "1"
     prompt = get_random_prompt()
     current_user = {"is_authenticated": bool(session.get("user_id"))}
-
     return render_template(
         "writing_quiz.html",
         prompt=prompt["text"],
@@ -294,39 +456,47 @@ def writing_quiz():
         user_id=user_id,
         is_guest=session.get("is_guest", False),
         review_mode=review_mode,
-        current_user=current_user
+        current_user=current_user,
     )
 
+# --- POST: 英作文送信（Gemini対応） ---
 @app.route("/submit_writing", methods=["POST"])
 def submit_writing():
     try:
         user_answer = request.form.get("answer", "").strip()
-        try:
-            prompt_id = int(request.form.get("prompt_id") or 1)
-        except Exception:
-            prompt_id = 1
-
+        prompt_id = int(request.form.get("prompt_id") or 0)
         user_id = session.get("user_id", 0)
         is_guest = session.get("is_guest", True)
 
-        # prompt_id に基づいて模範回答と意味を取得
-        prompt_data = PROMPTS.get(prompt_id, PROMPTS[1])
-        prompt_text = prompt_data["prompt"]
-        correct_example = prompt_data["example"]
-        correct_meaning = prompt_data["meaning"]
+        prompt_text = ""
+        correct_example = ""
+        correct_meaning = ""
+        if prompt_id:
+            with sqlite3.connect(WRITING_DB) as conn:
+                c = conn.cursor()
+                c.execute("""
+                    SELECT prompt_text, correct_example, correct_meaning
+                    FROM writing_prompts WHERE id=?
+                """, (prompt_id,))
+                row = c.fetchone()
+                if row:
+                    prompt_text, correct_example, correct_meaning = row
 
-        # 採点
         if not user_answer:
             score = 0
             feedback = "回答が入力されていません。"
         else:
-            score = min(100, len(user_answer) * 2)
-            if score >= 90:
-                feedback = "非常に良く書けています！文法も自然で読みやすいです。"
-            elif score >= 60:
-                feedback = "良い回答です。少しだけ自然な言い回しを意識しましょう。"
+            if HAS_GEMINI:
+                score, feedback, correct_example_gemini = evaluate_writing(prompt_text, user_answer)
+                correct_example = correct_example_gemini or correct_example
             else:
-                feedback = "改善の余地があります。基本的な文法と語彙を見直してみましょう。"
+                score = min(100, len(user_answer)*2)
+                if score >= 90:
+                    feedback = "非常に良く書けています！"
+                elif score >= 60:
+                    feedback = "良い回答です。少しだけ自然な言い回しを意識しましょう。"
+                else:
+                    feedback = "改善の余地があります。基本的な文法と語彙を見直してみましょう。"
 
         session['writing_result'] = {
             "score": score,
@@ -350,26 +520,13 @@ def submit_writing():
 
 @app.route("/writing_result")
 def writing_result():
-    result = session.get('writing_result')
+    result = session.get("writing_result")
     if not result:
-        flash("表示する結果がありません。")
         return redirect(url_for("writing_quiz"))
-
-    return render_template("writing_result.html", **result)
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
-@app.route("/health")
-def health():
-    return "OK", 200
+    return render_template("writing_result.html", result=result)
 
 # ======================================================
-# ローカル実行
+# アプリ起動
 # ======================================================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    logger.info(f"🚀 Running on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
