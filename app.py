@@ -478,13 +478,16 @@ def word_quiz():
         word_id, word, definition_ja = word_data
         pos_from_db = None
 
+    # current_user をテンプレ向けに簡易 dict で渡す（テンプレが .is_authenticated を参照するため）
+    current_user = {"is_authenticated": bool(session.get("user_id"))}
+
     return render_template(
         "word_quiz.html",
         word_id=word_id,
         word=word,
         average_score=get_average_score(user_id),
         review=review,
-        current_user=session,
+        current_user=current_user,
     )
 
 @app.route("/writing_quiz")
@@ -493,6 +496,10 @@ def writing_quiz():
     # review フラグを URL パラメータから受け取れるように（例: /writing_quiz?review=1）
     review_mode = request.args.get("review") == "1"
     prompt = get_random_prompt()
+
+    # current_user をテンプレ向けに簡易 dict で渡す（テンプレが .is_authenticated を参照するため）
+    current_user = {"is_authenticated": bool(session.get("user_id"))}
+
     return render_template(
         "writing_quiz.html",
         prompt=prompt["text"],
@@ -500,7 +507,7 @@ def writing_quiz():
         user_id=user_id,
         is_guest=session.get("is_guest", False),
         review_mode=review_mode,
-        current_user=session,
+        current_user=current_user,
     )
 
 @app.route("/submit_writing", methods=["POST"])
@@ -509,9 +516,24 @@ def submit_writing():
         # --- ユーザ入力の取得 ---
         user_answer = request.form.get("answer", "").strip()
         prompt = request.form.get("prompt", "").strip()
-        prompt_id = request.form.get("prompt_id", 0)
-        user_id = session.get("user_id", None)
+        # prompt_id may come as string; try to normalize
+        try:
+            prompt_id = int(request.form.get("prompt_id") or 0)
+        except Exception:
+            prompt_id = 0
+
+        # user_id: session preferred, fallback to form value
+        user_id = session.get("user_id")
+        if user_id is None:
+            try:
+                user_id = int(request.form.get("user_id", 0))
+            except Exception:
+                user_id = 0
+
         is_guest = session.get("is_guest", True)
+
+        logger.info("submit_writing called: user_id=%s prompt_id=%s prompt=%s answer_len=%d",
+                    str(user_id), str(prompt_id), prompt[:50], len(user_answer))
 
         # --- 採点処理（仮ロジック） ---
         if not user_answer:
@@ -531,9 +553,31 @@ def submit_writing():
         correct_example = "My greatest wish is to see the world."
         correct_meaning = "願望、願う"
 
+        # --- 必要なら writing_answers に保存（失敗しても継続） ---
+        try:
+            with sqlite3.connect(WRITING_DB) as conn:
+                c = conn.cursor()
+                c.execute(
+                    """INSERT INTO writing_answers (user_id, prompt_id, answer, score, feedback, correct_example, attempt_date, is_wrong)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (
+                        user_id or 0,
+                        prompt_id,
+                        user_answer,
+                        score,
+                        feedback,
+                        correct_example,
+                        datetime.datetime.utcnow().isoformat(),
+                        1 if score < 50 else 0,
+                    ),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning("Failed to save writing_answers: %s", e)
+
         # --- テンプレートへ渡す ---
         return render_template(
-            "writing_result.html",  # ← result.html → writing_result.html に変更
+            "writing_result.html",
             score=score,
             prompt=prompt or "No prompt",
             answer=user_answer or "（回答なし）",
@@ -547,9 +591,7 @@ def submit_writing():
         )
 
     except Exception as e:
-        import traceback
-        print("=== submit_writing ERROR ===")
-        print(traceback.format_exc())
+        logger.exception("submit_writing error")
         flash("採点中にエラーが発生しました。")
         return redirect(url_for("writing_quiz"))
 
