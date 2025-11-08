@@ -286,11 +286,16 @@ def reading_quiz():
 @app.route("/submit_reading", methods=["POST"])
 def submit_reading():
     try:
+        # =========================
+        # フォーム入力取得
+        # =========================
         user_id = session.get("user_id", 0)
         passage_id = int(request.form.get("passage_id", 0))
         user_answer = request.form.get("answer", "").strip()
 
+        # =========================
         # DBから英文取得
+        # =========================
         with sqlite3.connect(READING_DB) as conn:
             conn.row_factory = sqlite3.Row
             c = conn.cursor()
@@ -298,30 +303,46 @@ def submit_reading():
             row = c.fetchone()
         passage_text = row["text"] if row else "This is a sample English passage for practice."
 
+        # =========================
         # Jeminiで模範日本語訳を生成（失敗しても処理続行）
+        # =========================
         try:
             correct_answer_text = generate_japanese_translation(passage_text)
         except Exception:
             logger.exception("generate_japanese_translation failed")
             correct_answer_text = "（模範訳生成失敗）"
 
-        # 採点
-        score, feedback = evaluate_reading(passage_text, "", correct_answer_text, user_answer)
+        # =========================
+        # 採点（失敗した場合はスコア0、フィードバックあり）
+        # =========================
+        try:
+            score, feedback = evaluate_reading(passage_text, "", correct_answer_text, user_answer)
+        except Exception:
+            logger.exception("evaluate_reading failed")
+            score = 0
+            feedback = "採点に失敗しました。"
 
-        # DBに保存
-        with sqlite3.connect(READING_DB) as conn:
-            c = conn.cursor()
-            c.execute("""
-                INSERT INTO reading_answers
-                (user_id, passage_id, user_answer, score, feedback, attempt_date)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                user_id, passage_id, user_answer, score, feedback,
-                datetime.datetime.utcnow().isoformat()
-            ))
-            conn.commit()
+        # =========================
+        # DBに解答結果を保存（失敗しても結果表示は可能）
+        # =========================
+        try:
+            with sqlite3.connect(READING_DB) as conn:
+                c = conn.cursor()
+                c.execute("""
+                    INSERT INTO reading_answers
+                    (user_id, passage_id, user_answer, score, feedback, attempt_date)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    user_id, passage_id, user_answer, score, feedback,
+                    datetime.datetime.utcnow().isoformat()
+                ))
+                conn.commit()
+        except Exception:
+            logger.exception("DB保存失敗")
 
-        # sessionに結果保存
+        # =========================
+        # セッションに結果保存
+        # =========================
         session["reading_result"] = {
             "title": "",
             "prompt": passage_text,
@@ -334,6 +355,10 @@ def submit_reading():
         }
 
         logger.info(f"submit_reading success: user_id={user_id}, passage_id={passage_id}")
+
+        # =========================
+        # 結果ページに遷移
+        # =========================
         return redirect(url_for("reading_result"))
 
     except Exception:
