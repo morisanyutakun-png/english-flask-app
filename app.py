@@ -510,7 +510,7 @@ def writing_quiz():
         current_user=current_user,
     )
 
-# --- POST: 英作文送信 & 結果表示 ---
+# --- POST: 英作文送信 ---
 @app.route("/submit_writing", methods=["POST"])
 def submit_writing():
     try:
@@ -545,25 +545,21 @@ def submit_writing():
         correct_example = "My greatest wish is to see the world."
         correct_meaning = "願望、願う"
 
-        logger.info(
-            "Scoring complete: score=%d, feedback=%s",
-            score, feedback
-        )
+        # --- 結果を session に保存して GET にリダイレクト ---
+        session['writing_result'] = {
+            "score": score,
+            "prompt": prompt,
+            "answer": user_answer,
+            "correct_example": correct_example,
+            "correct_meaning": correct_meaning,
+            "feedback": feedback,
+            "user_id": user_id,
+            "prompt_id": prompt_id,
+            "is_guest": is_guest,
+            "added_to_weak": False
+        }
 
-        # --- 結果ページを直接レンダリング ---
-        return render_template(
-            "writing_result.html",
-            score=score,
-            prompt=prompt,
-            answer=user_answer,
-            correct_example=correct_example,
-            correct_meaning=correct_meaning,
-            feedback=feedback,
-            user_id=user_id,
-            prompt_id=prompt_id,
-            is_guest=is_guest,
-            added_to_weak=False
-        )
+        return redirect(url_for("writing_result"))
 
     except Exception as e:
         logger.exception("submit_writing error")
@@ -571,11 +567,10 @@ def submit_writing():
         return redirect(url_for("writing_quiz"))
 
 
-
 # --- GET: 結果表示 ---
 @app.route("/writing_result")
 def writing_result():
-    result = session.pop('writing_result', None)
+    result = session.get('writing_result')  # pop ではなく get に変更
     if not result:
         flash("表示する結果がありません。")
         logger.warning("writing_result not found in session")
@@ -585,10 +580,8 @@ def writing_result():
 
     return render_template(
         "writing_result.html",
-        **result  # session から取り出した値を展開
+        **result
     )
-
-
 
 @app.route("/ranking")
 def ranking():
