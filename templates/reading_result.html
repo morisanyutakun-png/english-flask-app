@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>日本語訳採点結果</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?ver=38">
+  <style>
+    body { font-family:"Hiragino Sans","Noto Sans JP",sans-serif; margin:0; padding:0; background: linear-gradient(135deg,#eef2ff,#f8fafc); color:#333; }
+    .container { max-width:720px; margin:60px auto; padding:20px; display:flex; flex-direction:column; align-items:center; position:relative; }
+    .logout-btn { position: fixed; top:20px; right:20px; background: linear-gradient(135deg,#dc2626,#b91c1c); color:white; border:none; border-radius:12px; padding:10px 16px; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(220,38,38,0.3); transition:0.3s; z-index:100; }
+    .logout-btn:hover { transform: translateY(-2px); box-shadow:0 6px 20px rgba(220,38,38,0.4); }
+
+    h1 { font-size:2.2rem; margin-bottom:40px; background: linear-gradient(90deg,#4f46e5,#7c3aed); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-weight:800; text-align:center; }
+
+    .score-box { background:#ffffffdd; backdrop-filter:blur(8px); padding:20px 30px; border-radius:16px; margin-bottom:40px; width:100%; text-align:center; box-shadow:0 10px 25px rgba(0,0,0,0.1);}
+    #score { font-size:3rem; font-weight:900; color:#16a34a; }
+
+    .card { width:100%; background: linear-gradient(145deg,#ffffff,#f0f0ff); border-radius:18px; padding:24px; margin:20px 0; box-shadow:0 8px 20px rgba(0,0,0,0.1),0 4px 8px rgba(0,0,0,0.05); transition:transform 0.3s, box-shadow 0.3s; }
+    .card:hover { transform: translateY(-6px); box-shadow:0 15px 30px rgba(0,0,0,0.15),0 6px 12px rgba(0,0,0,0.08); }
+    .card h3 { font-size:1.2rem; margin-bottom:12px; color:#7c3aed; display:flex; align-items:center; justify-content:space-between; }
+    .card p { font-size:1rem; line-height:1.6; color:#333; }
+
+    .tts-btn { cursor:pointer; background:#ff5722; border:none; border-radius:8px; padding:5px 12px; font-size:0.9rem; color:white; font-weight:600; transition:0.2s; }
+    .tts-btn:hover { background:#e64a19; }
+
+    .btn-group { margin-top:30px; display:flex; gap:15px; flex-wrap:wrap; justify-content:center; }
+    .btn { padding:12px 28px; border-radius:12px; border:none; font-weight:700; cursor:pointer; font-size:1rem; transition:0.3s; text-decoration:none; display:inline-block; }
+    .btn-primary { background:linear-gradient(135deg,#4f46e5,#7c3aed); color:white; box-shadow:0 4px 15px rgba(79,70,229,0.3);}
+    .btn-primary:hover { transform:translateY(-3px); box-shadow:0 6px 20px rgba(79,70,229,0.4);}
+    .btn-secondary { background:linear-gradient(135deg,#6b7280,#4b5563); color:white; box-shadow:0 4px 15px rgba(107,114,128,0.3);}
+    .btn-secondary:hover { transform:translateY(-3px); box-shadow:0 6px 20px rgba(107,114,128,0.4); }
+
+    @media(max-width:480px){ #score{ font-size:2.4rem; } .card{ padding:20px; } .btn{ padding:10px 20px; font-size:0.95rem; } .logout-btn{ padding:8px 12px; font-size:0.9rem; } }
+  </style>
+</head>
+<body>
+  {% if not is_guest %}
+  <button class="logout-btn" onclick="location.href='{{ url_for('logout') }}'">ログアウト</button>
+  {% endif %}
+
+  <div class="container">
+
+    <!-- フラッシュメッセージ -->
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div style="width:100%; text-align:center; margin-bottom:20px;">
+          {% for message in messages %}
+            <p style="color:#16a34a; font-weight:600;">{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <h1>リーディング結果</h1>
+
+    <div class="score-box">
+      <h2 id="score" data-score="{{ score|default(0) }}">0 点</h2>
+    </div>
+
+    <div class="card">
+      <h3>📖 英文</h3>
+      <p>{{ prompt|default('英文がありません') }}</p>
+    </div>
+
+    <div class="card">
+      <h3>✏ あなたの日本語訳</h3>
+      <p>{{ answer|default('（回答なし）') }}</p>
+    </div>
+
+    <div class="card">
+      <h3>📝 模範日本語訳
+        <button class="tts-btn" id="tts-example-btn">🎵 英文を再生</button>
+      </h3>
+      <p id="example-sentence">{{ correct_example|default('') }}</p>
+    </div>
+
+    <div class="card">
+      <h3>🧭 アドバイス</h3>
+      <p>{{ feedback|default('') }}</p>
+    </div>
+
+    {% if not is_guest and score < 50 %}
+    <div class="card">
+      <h3>💡 苦手モード登録</h3>
+      <form method="POST" action="{{ url_for('add_to_weak') }}">
+        <input type="hidden" name="user_id" value="{{ user_id|default(0) }}">
+        <input type="hidden" name="prompt_id" value="{{ prompt_id|default(0) }}">
+        <label>
+          <input type="checkbox" name="add_to_weak" value="1" {% if added_to_weak %}checked{% endif %}>
+          この問題を苦手モードに追加する
+        </label>
+        <br><br>
+        <button type="submit" class="btn btn-secondary">保存</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <div class="btn-group">
+      <a href="{{ url_for('index') }}" class="btn btn-primary">トップに戻る</a>
+      <a href="{{ url_for('reading_quiz') }}" class="btn btn-secondary">次の問題へ</a>
+    </div>
+  </div>
+
+  <script>
+    // ===== スコアアニメーション =====
+    window.onload = function() {
+      const scoreEl = document.getElementById('score');
+      const finalScore = parseInt(scoreEl.dataset.score) || 0;
+      let current = 0;
+      const interval = setInterval(() => {
+        if(current < finalScore){ current++; scoreEl.textContent = current + ' 点'; }
+        else clearInterval(interval);
+      }, 20);
+    };
+
+    // ===== 英文TTS =====
+    let voices=[];
+    function loadVoices(){ voices=speechSynthesis.getVoices(); if(!voices.length)setTimeout(loadVoices,100);}
+    speechSynthesis.onvoiceschanged = loadVoices;
+    loadVoices();
+    function playEnglishTTS(text){
+      if(!text) return;
+      if(!voices.length){ voices = speechSynthesis.getVoices(); setTimeout(()=>playEnglishTTS(text),100); return; }
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang='en-US'; utter.rate=0.95; utter.pitch=1.0; utter.volume=1.0;
+      const enVoice=voices.find(v=>v.lang.startsWith('en')&&v.name.includes('Google'))||voices.find(v=>v.lang.startsWith('en'));
+      if(enVoice) utter.voice=enVoice;
+      speechSynthesis.speak(utter);
+    }
+    document.getElementById('tts-example-btn')?.addEventListener('click',()=>{ playEnglishTTS(document.getElementById('example-sentence')?.textContent); });
+  </script>
+</body>
+</html>
