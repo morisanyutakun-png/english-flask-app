@@ -908,6 +908,10 @@ def logout():
 def health():
     return "OK", 200
 
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
 
 # ======================================================
 # ローカル実行
