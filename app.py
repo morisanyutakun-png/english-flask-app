@@ -254,42 +254,31 @@ def reading_quiz():
     user_id = session.get("user_id", 0)
 
     try:
-        # DBからランダムに1件取得（reading_textsテーブルに変更）
+        # DBからランダムに1件取得（reading_textsテーブル）
         with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
-            c.execute(
-                "SELECT id, text FROM reading_texts ORDER BY RANDOM() LIMIT 1"
-            )
+            c.execute("SELECT id, text FROM reading_texts ORDER BY RANDOM() LIMIT 1")
             row = c.fetchone()
 
         if row:
             passage_id, passage_text = row
-            title = ""           # titleカラムは存在しないので空文字
-            question_text = ""   # questionカラムもないので空文字
-            correct_answer_text = ""  # correct_answerも空文字
         else:
             passage_id = 0
-            title = ""
             passage_text = "This is a sample English passage for practice."
-            question_text = "Please answer the question based on the passage."
-            correct_answer_text = "Sample correct answer."
 
     except Exception as e:
         logger.exception("reading_quiz DB error")
         passage_id = 0
-        title = ""
         passage_text = "This is a sample English passage for practice."
-        question_text = "Please answer the question based on the passage."
-        correct_answer_text = "Sample correct answer."
 
     current_user = {"is_authenticated": bool(user_id)}
     return render_template(
         "reading_quiz.html",
-        title=title,
+        title="",
         prompt=passage_text,
-        question=question_text,
+        question="",
         passage_id=passage_id,
-        correct_answer=correct_answer_text,
+        correct_answer="",
         user_id=user_id,
         current_user=current_user
     )
@@ -305,28 +294,15 @@ def submit_reading():
         # DBから問題取得
         with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
-            c.execute(
-                "SELECT text FROM reading_texts WHERE id=?",
-                (passage_id,)
-            )
+            c.execute("SELECT text FROM reading_texts WHERE id=?", (passage_id,))
             row = c.fetchone()
 
-        if not row:
-            flash("問題が見つかりません。")
-            return redirect(url_for("reading_quiz"))
-
-        passage_text = row[0]
-        title = ""                 # titleカラムなし
-        question_text = ""         # questionカラムなし
-        correct_answer_text = ""   # correct_answerなし
-
-        # 空欄チェック
-        passage_text = passage_text or "This is a sample English passage for practice."
-        question_text = question_text or "Please answer the question based on the passage."
-        correct_answer_text = correct_answer_text or "Sample correct answer."
+        passage_text = row[0] if row else "This is a sample English passage for practice."
 
         # 採点
-        score, feedback = evaluate_reading(passage_text, question_text, correct_answer_text, user_answer)
+        score, feedback = evaluate_reading(
+            passage_text, "", "", user_answer
+        )
 
         # DB保存
         with sqlite3.connect(READING_DB) as conn:
@@ -345,15 +321,16 @@ def submit_reading():
             ))
             conn.commit()
 
-        # sessionに結果保存
+        # sessionに結果保存（必ずすべてのキーをセット）
         session["reading_result"] = {
-            "title": title,
+            "title": "",
             "prompt": passage_text,
-            "question": question_text,
-            "user_answer": user_answer,
-            "correct_answer": correct_answer_text,
+            "question": "",
+            "user_answer": user_answer or "（回答なし）",
+            "correct_answer": "Sample correct answer.",
             "score": score,
-            "feedback": feedback
+            "feedback": feedback,
+            "passage_id": passage_id
         }
 
         return redirect(url_for("reading_result"))
@@ -379,13 +356,13 @@ def reading_result():
         "title": result.get("title", ""),
         "prompt": result.get("prompt", ""),
         "question": result.get("question", ""),
-        "answer": result.get("user_answer", ""),          # <- ここ修正
-        "correct_example": result.get("correct_answer", ""), # <- ここ修正
+        "answer": result.get("user_answer", "（回答なし）"),
+        "correct_example": result.get("correct_answer", "Sample correct answer."),
         "score": result.get("score", 0),
         "feedback": result.get("feedback", ""),
         "user_id": session.get("user_id", 0),
         "is_guest": is_guest,
-        "prompt_id": session.get("reading_result", {}).get("passage_id", 0),
+        "prompt_id": result.get("passage_id", 0),
         "added_to_weak": False
     }
 
