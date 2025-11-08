@@ -286,38 +286,29 @@ def reading_quiz():
 @app.route("/submit_reading", methods=["POST"])
 def submit_reading():
     try:
-        # =========================
-        # フォーム入力取得
-        # =========================
         user_id = session.get("user_id", 0)
         passage_id = int(request.form.get("passage_id", 0))
         user_answer = request.form.get("answer", "").strip()
 
-        # =========================
-        # DBから英文を取得
-        # =========================
+        # DBから英文取得
         with sqlite3.connect(READING_DB) as conn:
-            conn.row_factory = sqlite3.Row  # 辞書風アクセス
+            conn.row_factory = sqlite3.Row
             c = conn.cursor()
             c.execute("SELECT text FROM reading_texts WHERE id = ?", (passage_id,))
             row = c.fetchone()
         passage_text = row["text"] if row else "This is a sample English passage for practice."
 
-        # =========================
-        # Jeminiで模範日本語訳を生成
-        # =========================
-        correct_answer_text = generate_japanese_translation(passage_text)
+        # Jeminiで模範日本語訳を生成（失敗しても処理続行）
+        try:
+            correct_answer_text = generate_japanese_translation(passage_text)
+        except Exception:
+            logger.exception("generate_japanese_translation failed")
+            correct_answer_text = "（模範訳生成失敗）"
 
-        # =========================
-        # 採点処理
-        # =========================
-        score, feedback = evaluate_reading(
-            passage_text, "", correct_answer_text, user_answer
-        )
+        # 採点
+        score, feedback = evaluate_reading(passage_text, "", correct_answer_text, user_answer)
 
-        # =========================
-        # DBに解答結果を保存
-        # =========================
+        # DBに保存
         with sqlite3.connect(READING_DB) as conn:
             c = conn.cursor()
             c.execute("""
@@ -325,18 +316,12 @@ def submit_reading():
                 (user_id, passage_id, user_answer, score, feedback, attempt_date)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (
-                user_id,
-                passage_id,
-                user_answer,
-                score,
-                feedback,
+                user_id, passage_id, user_answer, score, feedback,
                 datetime.datetime.utcnow().isoformat()
             ))
             conn.commit()
 
-        # =========================
-        # セッションに結果を保存
-        # =========================
+        # sessionに結果保存
         session["reading_result"] = {
             "title": "",
             "prompt": passage_text,
@@ -348,18 +333,14 @@ def submit_reading():
             "passage_id": passage_id
         }
 
-        # =========================
-        # 結果ページへリダイレクト
-        # =========================
+        logger.info(f"submit_reading success: user_id={user_id}, passage_id={passage_id}")
         return redirect(url_for("reading_result"))
 
-    except Exception as e:
-        # =========================
-        # 例外処理
-        # =========================
+    except Exception:
         logger.exception("submit_reading error")
         flash("採点中にエラーが発生しました。もう一度お試しください。")
         return redirect(url_for("reading_quiz"))
+
 
 @app.route("/reading_result")
 def reading_result():
