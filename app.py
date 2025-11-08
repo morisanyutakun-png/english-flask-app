@@ -254,12 +254,16 @@ def reading_quiz():
     user_id = session.get("user_id", 0)
     reading = get_random_reading()
 
+    # passage が空なら仮の英文を入れる
+    passage_text = reading["passage"] or "This is a sample English passage for practice."
+    question_text = reading["question"] or "Please answer the question based on the passage."
+
     current_user = {"is_authenticated": bool(user_id)}
     return render_template(
         "reading_quiz.html",
         title=reading["title"],
-        passage=reading["passage"],
-        question=reading["question"],
+        prompt=passage_text,      # ← ここを prompt に
+        question=question_text,
         passage_id=reading["id"],
         user_id=user_id,
         current_user=current_user
@@ -289,17 +293,12 @@ def submit_reading():
         title, passage, question, correct_answer = row
 
         # passage が空の場合は仮英文を設定
-        if not passage:
-            passage = "This is a sample English passage for practice."
-
-        if not question:
-            question = "Please answer the question based on the passage."
-
-        if not correct_answer:
-            correct_answer = "Sample correct answer."
+        prompt_text = passage or "This is a sample English passage for practice."
+        question_text = question or "Please answer the question based on the passage."
+        correct_answer_text = correct_answer or "Sample correct answer."
 
         # 採点
-        score, feedback = evaluate_reading(passage, question, correct_answer, user_answer)
+        score, feedback = evaluate_reading(prompt_text, question_text, correct_answer_text, user_answer)
 
         # DB保存
         with sqlite3.connect(READING_DB) as conn:
@@ -321,10 +320,10 @@ def submit_reading():
         # sessionに結果保存
         session["reading_result"] = {
             "title": title,
-            "passage": passage,
-            "question": question,
+            "prompt": prompt_text,           # ← HTML側の {{ prompt }} に合わせる
+            "question": question_text,
             "user_answer": user_answer,
-            "correct_answer": correct_answer,
+            "correct_answer": correct_answer_text,
             "score": score,
             "feedback": feedback
         }
@@ -336,12 +335,15 @@ def submit_reading():
         flash("採点中にエラーが発生しました。")
         return redirect(url_for("reading_quiz"))
 
+
 @app.route("/reading_result")
 def reading_result():
     result = session.get("reading_result")
     if not result:
         flash("結果がありません。")
+        logger.warning("reading_result not found in session")
         return redirect(url_for("reading_quiz"))
+
     return render_template("reading_result.html", **result)
 
 # ======================================================
