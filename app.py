@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DB_FILE = os.path.join(BASE_DIR, "english_learning.db")
 REPO_WRITING_DB = os.path.join(BASE_DIR, "writing_quiz.db")
-REPO_READING_DB = os.path.join(BASE_DIR, "reding_quiz.db")  # ← 修正
+REPO_READING_DB = os.path.join(BASE_DIR, "reading_quiz.db")  # ← 修正
 TMP_DIR = "/tmp"
 DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
 WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
-READING_DB = os.path.join(TMP_DIR, "reding_quiz.db")        # ← 修正
+READING_DB = os.path.join(TMP_DIR, "reading_quiz.db")        # ← 修正
 
 os.makedirs(TMP_DIR, exist_ok=True)
 for src, dst in [(REPO_DB_FILE, DB_FILE), (REPO_WRITING_DB, WRITING_DB), (REPO_READING_DB, READING_DB)]:
