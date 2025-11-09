@@ -185,7 +185,25 @@ def init_all_dbs():
 
 init_all_dbs()
 
+# ======================================================
+# TOEIC Reading DB 初期化
+# ======================================================
+TOEIC_READING_DB = os.path.join(TMP_DIR, "toeic_r.db")
 
+def init_toeic_reading_db():
+    create_statements = [
+        '''CREATE TABLE IF NOT EXISTS reading (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT,
+            questions TEXT,
+            answers TEXT
+        )'''
+    ]
+    init_db_file(TOEIC_READING_DB, create_statements)
+    logger.info(f"TOEIC reading DB initialized: {TOEIC_READING_DB}")
+
+# Flask 初期化の最後で呼ぶ
+init_toeic_reading_db()
 # ======================================================
 # Gemini 簡易採点関数（リーディング用）
 # ======================================================
@@ -912,6 +930,83 @@ def health():
 def privacy():
     return render_template("privacy.html")
 
+# ===============================
+# toeicrのjemini 採点関数
+# ===============================
+def evaluate_toeic_r(passage, question, correct_answer, user_answer):
+    if not user_answer:
+        return 0, "回答が入力されていません。"
+    if not HAS_GEMINI:
+        score = 100 if correct_answer.strip().lower() in user_answer.strip().lower() else 60
+        return score, "（簡易採点）内容を確認してください。"
+
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        prompt = f"""
+次の英文読解問題の採点をしてください。JSON形式で結果を返してください。
+
+文章:
+{passage}
+
+質問:
+{question}
+
+正答:
+{correct_answer}
+
+学生の回答:
+{user_answer}
+
+出力フォーマット:
+{{
+  "score": 0,
+  "feedback": ""
+}}
+"""
+        res = model.generate_content(prompt)
+        data = json.loads(re.search(r"\{.*\}", res.text, re.S).group(0))
+        score = int(data.get("score", 0))
+        feedback = data.get("feedback", "")
+        return score, feedback
+    except Exception as e:
+        logger.error("Gemini reading error: %s", e)
+        return 50, "採点に失敗したため簡易スコアを返しました。"
+
+# ===============================
+# TOEICリーディング 問題表示 & 解答受付
+# ===============================
+@app.route("/toeic_r/<int:reading_id>", methods=["GET", "POST"])
+def toeic_reading(reading_id):
+    db = sqlite3.connect(TOEIC_READING_DB)
+    db.row_factory = sqlite3.Row
+    cur = db.execute("SELECT * FROM reading WHERE id=?", (reading_id,))
+    row = cur.fetchone()
+    if not row:
+        return "問題が見つかりません", 404
+
+    passage = row["text"]
+    questions = json.loads(row["questions"])  # 複数問題を想定
+    answers = json.loads(row["answers"])      # 正答も複数対応
+
+    feedbacks = []
+    total_score = 0
+
+    if request.method == "POST":
+        user_answers = [request.form.get(f"q{i}") for i in range(len(questions))]
+        for i, (q, correct, user) in enumerate(zip(questions, answers, user_answers)):
+            score, feedback = evaluate_toeic_r(passage, q, correct, user)
+            feedbacks.append({
+                "question": q,
+                "user_answer": user,
+                "score": score,
+                "feedback": feedback
+            })
+            total_score += score
+        avg_score = total_score / len(questions)
+        return render_template("toeic_r_result.html", passage=passage,
+                               feedbacks=feedbacks, avg_score=avg_score)
+
+    return render_template("toeic_r.html", passage=passage, questions=questions)
 
 # ======================================================
 # ローカル実行

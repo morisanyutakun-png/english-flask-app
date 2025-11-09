@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>TOEIC リーディング問題</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; }
+        .question { margin-bottom: 20px; }
+        .submit-btn { padding: 10px 20px; font-size: 16px; }
+        textarea { width: 100%; height: 60px; }
+    </style>
+</head>
+<body>
+    <h1>TOEIC リーディング問題</h1>
+    <p>{{ passage }}</p>
+
+    <form method="post">
+        {% for i, q in enumerate(questions) %}
+        <div class="question">
+            <label>Q{{ i + 1 }}: {{ q }}</label><br>
+            <textarea name="q{{ i }}" placeholder="ここに回答を入力"></textarea>
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="submit-btn">採点する</button>
+    </form>
+</body>
+</html>

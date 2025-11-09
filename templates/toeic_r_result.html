@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>TOEIC リーディング結果</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; }
+        .feedback { border-bottom: 1px solid #ccc; padding: 10px 0; }
+        .score { font-weight: bold; color: green; }
+        .user-answer { font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>TOEIC リーディング結果</h1>
+    <p>{{ passage }}</p>
+    <p>平均スコア: <span class="score">{{ avg_score }} 点</span></p>
+
+    {% for fb in feedbacks %}
+    <div class="feedback">
+        <p><strong>Q:</strong> {{ fb.question }}</p>
+        <p><strong>あなたの回答:</strong> <span class="user-answer">{{ fb.user_answer }}</span></p>
+        <p><strong>スコア:</strong> {{ fb.score }} 点</p>
+        <p><strong>フィードバック:</strong> {{ fb.feedback }}</p>
+    </div>
+    {% endfor %}
+
+    <a href="{{ request.path }}">もう一度挑戦する</a>
+</body>
+</html>
