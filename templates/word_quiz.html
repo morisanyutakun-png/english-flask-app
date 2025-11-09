@@ -113,13 +113,24 @@ document.addEventListener("DOMContentLoaded", ()=>{
   loadVoices();
 
   function playEnglishTTS(text){
-    if(!text) return;
-    const utter=new SpeechSynthesisUtterance(text);
-    utter.lang='en-US'; utter.rate=0.95;
-    const enVoice=voices.find(v=>v.lang.startsWith('en')&&v.name.includes('Google'))||voices.find(v=>v.lang.startsWith('en'));
-    if(enVoice) utter.voice=enVoice;
-    speechSynthesis.speak(utter);
+  if(!text) return;
+
+  // 前の発話をキャンセルしてクリア
+  if(speechSynthesis.speaking || speechSynthesis.pending){
+    speechSynthesis.cancel();
   }
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'en-US';
+  utter.rate = 0.95;
+
+  const enVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) 
+                  || voices.find(v => v.lang.startsWith('en'));
+  if(enVoice) utter.voice = enVoice;
+
+  speechSynthesis.speak(utter);
+}
+
 
   document.getElementById('tts-word-btn')?.addEventListener('click',()=>playEnglishTTS(document.querySelector('#word .highlight')?.textContent));
   document.getElementById('tts-example-btn')?.addEventListener('click',()=>playEnglishTTS(document.getElementById('example-sentence')?.textContent));
