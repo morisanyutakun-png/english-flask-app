@@ -4,19 +4,35 @@
     <meta charset="UTF-8">
     <title>TOEIC リーディング結果</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; }
-        .feedback { border-bottom: 1px solid #ccc; padding: 10px 0; }
-        .score { font-weight: bold; color: green; }
-        .user-answer { font-style: italic; }
+        body { 
+            font-family: "Hiragino Sans", "Noto Sans JP", Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 40px auto; 
+            padding: 0 20px; 
+            background: #f9fafb; 
+            color: #111; 
+        }
+        h1 { text-align: center; color: #4f46e5; margin-bottom: 20px; }
+        .passage { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); white-space: pre-line; margin-bottom: 30px; }
+        .avg-score { text-align: center; font-size: 18px; font-weight: bold; color: #16a34a; margin-bottom: 30px; }
+        .feedback-card { background: #fff; padding: 15px 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
+        .feedback-card p { margin: 6px 0; }
+        .feedback-card strong { color: #4f46e5; }
+        .user-answer { font-style: italic; color: #1e40af; }
+        .retry-btn { display: block; text-align: center; margin: 30px auto; padding: 12px 30px; font-size: 16px; background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: 700; text-decoration: none; width: 200px; }
+        .retry-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(79,70,229,0.3); }
     </style>
 </head>
 <body>
     <h1>TOEIC リーディング結果</h1>
-    <p>{{ passage }}</p>
-    <p>平均スコア: <span class="score">{{ avg_score }} 点</span></p>
+
+    <h2>英文</h2>
+    <p class="passage">{{ passage }}</p>
+
+    <p class="avg-score">平均スコア: {{ avg_score }} 点</p>
 
     {% for fb in feedbacks %}
-    <div class="feedback">
+    <div class="feedback-card">
         <p><strong>Q:</strong> {{ fb.question }}</p>
         <p><strong>あなたの回答:</strong> <span class="user-answer">{{ fb.user_answer }}</span></p>
         <p><strong>スコア:</strong> {{ fb.score }} 点</p>
@@ -24,6 +40,6 @@
     </div>
     {% endfor %}
 
-    <a href="{{ request.path }}">もう一度挑戦する</a>
+    <a href="{{ request.path }}" class="retry-btn">もう一度挑戦する</a>
 </body>
 </html>
