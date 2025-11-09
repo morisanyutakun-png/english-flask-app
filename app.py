@@ -540,7 +540,7 @@ def generate_and_evaluate_reading(passage: str, user_answer: str, question: str 
         # プロンプトを明確化
         # ----------------------------
         prompt = f"""
-以下の英文読解問題について、学生の回答に対する日本語の模範訳と採点結果を返してください。
+以下の英文読解問題について、学生の回答に対する日本語の模範訳と採点結果(100点満点)を返してください。
 文章:
 {passage}
 
