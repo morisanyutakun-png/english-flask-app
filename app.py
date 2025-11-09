@@ -24,16 +24,27 @@ logger = logging.getLogger(__name__)
 # DB 設定
 # ======================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TMP_DIR = "/tmp"
+
+# リポジトリにある DB
 REPO_DB_FILE = os.path.join(BASE_DIR, "english_learning.db")
 REPO_WRITING_DB = os.path.join(BASE_DIR, "writing_quiz.db")
-REPO_READING_DB = os.path.join(BASE_DIR, "reading_quiz.db")  # ← 修正
-TMP_DIR = "/tmp"
+REPO_READING_DB = os.path.join(BASE_DIR, "reading_quiz.db")
+REPO_TOEIC_DB = os.path.join(BASE_DIR, "toeic_r.db")  # TOEIC Reading DB
+
+# TMP にコピーする先
 DB_FILE = os.path.join(TMP_DIR, "english_learning.db")
 WRITING_DB = os.path.join(TMP_DIR, "writing_quiz.db")
-READING_DB = os.path.join(TMP_DIR, "reading_quiz.db")        # ← 修正
+READING_DB = os.path.join(TMP_DIR, "reading_quiz.db")
+TOEIC_READING_DB = os.path.join(TMP_DIR, "toeic_r.db")
 
 os.makedirs(TMP_DIR, exist_ok=True)
-for src, dst in [(REPO_DB_FILE, DB_FILE), (REPO_WRITING_DB, WRITING_DB), (REPO_READING_DB, READING_DB)]:
+for src, dst in [
+    (REPO_DB_FILE, DB_FILE),
+    (REPO_WRITING_DB, WRITING_DB),
+    (REPO_READING_DB, READING_DB),
+    (REPO_TOEIC_DB, TOEIC_READING_DB)  # ← 追加
+]:
     if os.path.exists(src) and not os.path.exists(dst):
         shutil.copy(src, dst)
         logger.info(f"DB copied to tmp: {dst}")
@@ -90,10 +101,6 @@ def init_db_file(path, create_statements):
         logger.info(f"DB initialized: {path}")
 
 def ensure_word_pos_column(path):
-    """
-    既存DBに pos（品詞）カラムが無ければ追加する。重複追加を避けるためにカラム存在チェックを行う。
-    pos には英語キー（例: 'noun','adjective'）を格納する想定。
-    """
     try:
         with sqlite3.connect(path) as conn:
             c = conn.cursor()
@@ -117,7 +124,6 @@ def init_all_dbs():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             word TEXT UNIQUE,
             definition_ja TEXT
-            -- pos カラムは後方互換のため ALTER TABLE で追加される可能性あり
         )''',
         '''CREATE TABLE IF NOT EXISTS student_answers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,7 +157,6 @@ def init_all_dbs():
             wrong_count INTEGER DEFAULT 0
         )'''
     ]
-    # === READING QUIZ 用テーブル ===
     create_reading = [
         '''CREATE TABLE IF NOT EXISTS reading_passages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,8 +178,6 @@ def init_all_dbs():
     init_db_file(DB_FILE, create_users_words)
     init_db_file(WRITING_DB, create_writing)
     init_db_file(READING_DB, create_reading)
-
-    # words テーブルに pos カラムがない場合は追加
     ensure_word_pos_column(DB_FILE)
 
     # ゲストユーザー作成
@@ -186,10 +189,8 @@ def init_all_dbs():
 init_all_dbs()
 
 # ======================================================
-# TOEIC Reading DB 初期化
+# TOEIC Reading DB 初期化（テーブル作成 + サンプル追加可能）
 # ======================================================
-TOEIC_READING_DB = os.path.join(TMP_DIR, "toeic_r.db")
-
 def init_toeic_reading_db():
     create_statements = [
         '''CREATE TABLE IF NOT EXISTS reading (
@@ -202,8 +203,25 @@ def init_toeic_reading_db():
     init_db_file(TOEIC_READING_DB, create_statements)
     logger.info(f"TOEIC reading DB initialized: {TOEIC_READING_DB}")
 
+    # サンプル問題追加（存在しない場合のみ）
+    with sqlite3.connect(TOEIC_READING_DB) as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM reading")
+        if c.fetchone()[0] == 0:
+            import json
+            sample_passage = "This is a sample TOEIC reading passage."
+            sample_questions = ["What is the passage about?"]
+            sample_answers = ["A sample TOEIC passage."]
+            c.execute(
+                "INSERT INTO reading (text, questions, answers) VALUES (?, ?, ?)",
+                (sample_passage, json.dumps(sample_questions), json.dumps(sample_answers))
+            )
+            conn.commit()
+            logger.info("Sample TOEIC reading problem inserted.")
+
 # Flask 初期化の最後で呼ぶ
 init_toeic_reading_db()
+
 # ======================================================
 # Gemini 簡易採点関数（リーディング用）
 # ======================================================
