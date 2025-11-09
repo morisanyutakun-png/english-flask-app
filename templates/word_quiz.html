@@ -63,31 +63,21 @@
       <p class="label-score">あなたのスコア:</p>
       <p class="score-text" id="score-text"></p>
     </div>
-
-    <!-- あなたの回答のみ -->
     <div class="card accent-green">
       <strong>あなたの回答:</strong>
       <div id="user-answer" style="font-size:1.1rem; margin-top:5px;">（未回答）</div>
     </div>
-
-    <!-- 品詞と意味 -->
     <div class="pos-meaning-box" id="pos-meaning-box"></div>
-
-    <!-- 例文 -->
     <div class="example-box" id="example-box">
       <p class="label-advice">📖 例文:</p>
       <p id="example-sentence">（例文なし）</p>
       <p id="example-translation" style="color:#555; margin-top:4px;"></p>
       <button class="tts-btn" id="tts-example-btn">🎵 英語を再生</button>
     </div>
-
-    <!-- アドバイス -->
     <div class="advice-box">
       <p class="label-advice">🧭 アドバイス:</p>
       <p class="advice-text" id="feedback-text"></p>
     </div>
-
-    <div id="next-buttons" style="margin-top:15px;"></div>
   </section>
 
   <nav class="nav-links">
@@ -102,10 +92,12 @@
 document.addEventListener("DOMContentLoaded", ()=>{
   const submitBtn=document.getElementById('submit-btn');
   const answerInput=document.getElementById('answer');
-  const wordId=document.getElementById('word-id').value;
+  const wordIdInput=document.getElementById('word-id');
   const progressContainer=document.getElementById('progress-container');
   const progressBar=document.getElementById('progress-bar');
   const progressText=document.getElementById('progress-text');
+  const quizCard=document.getElementById('quiz-card');
+  const feedbackBox=document.getElementById('feedback-box');
 
   let voices=[];
   function loadVoices(){ voices=speechSynthesis.getVoices(); }
@@ -124,7 +116,50 @@ document.addEventListener("DOMContentLoaded", ()=>{
   document.getElementById('tts-word-btn')?.addEventListener('click',()=>playEnglishTTS(document.querySelector('#word .highlight')?.textContent));
   document.getElementById('tts-example-btn')?.addEventListener('click',()=>playEnglishTTS(document.getElementById('example-sentence')?.textContent));
 
-  submitBtn.addEventListener('click',async ()=>{
+  async function loadNextWord(data){
+    // 平均スコア
+    document.getElementById('average-score').textContent=data.average_score ?? 0;
+
+    // あなたの回答
+    document.getElementById('user-answer').textContent=data.user_answer || answerInput.value || '（未回答）';
+
+    // 品詞と意味
+    const posMeaningBox=document.getElementById('pos-meaning-box');
+    posMeaningBox.innerHTML=`
+      <div class="card accent-blue"><div>📘 品詞</div><div>${data.pos || '（情報なし）'}</div></div>
+      <div class="card accent-green"><div>💡 意味</div><div>${data.simple_meaning || '（意味情報なし）'}</div></div>
+    `;
+
+    // スコア
+    const scoreEl=document.getElementById('score-text');
+    scoreEl.textContent=`${data.score ?? 0} 点`;
+    scoreEl.classList.add('score-animate');
+
+    // 例文
+    const example=data.example_en || '';
+    const exampleJa=data.example_jp || '';
+    const exampleSent=document.getElementById('example-sentence');
+    const exampleTrans=document.getElementById('example-translation');
+    if(example){
+      exampleSent.innerHTML=example.split(/(?<=[.!?])\s+/).map(s=>s.trim()).filter(Boolean).join('<br>');
+      exampleTrans.textContent=exampleJa || '';
+    } else {
+      exampleSent.textContent='（例文なし）';
+      exampleTrans.textContent='';
+    }
+
+    // アドバイス
+    document.getElementById('feedback-text').innerHTML=(data.feedback||'').replace(/\n/g,'<br>');
+
+    // 次の単語を quiz-card に表示する
+    wordIdInput.value = data.next_word_id || 0;
+    document.querySelector('#word .highlight').textContent = data.next_word || '（単語がありません）';
+    answerInput.value = '';
+    feedbackBox.style.display = 'none';
+    quizCard.style.display = 'block';
+  }
+
+  submitBtn.addEventListener('click', async ()=>{
     const answer=answerInput.value.trim();
     if(!answer) return alert('回答を入力してください');
     submitBtn.disabled=true; submitBtn.textContent='採点中...';
@@ -142,7 +177,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
       const response=await fetch("{{ url_for('api_submit_answer') }}",{
         method:'POST',
         headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body:`word_id=${encodeURIComponent(wordId)}&answer=${encodeURIComponent(answer)}&review=${encodeURIComponent(reviewFlag)}`
+        body:`word_id=${encodeURIComponent(wordIdInput.value)}&answer=${encodeURIComponent(answer)}&review=${encodeURIComponent(reviewFlag)}`
       });
       if(!response.ok) throw new Error('サーバーエラー');
       const data=await response.json();
@@ -150,62 +185,11 @@ document.addEventListener("DOMContentLoaded", ()=>{
       progressBar.style.width='100%';
       progressText.textContent='100%';
 
-      setTimeout(()=>{
-        progressContainer.style.display='none';
-        document.getElementById('quiz-card').style.display='none';
-        const feedbackBox=document.getElementById('feedback-box');
-        feedbackBox.style.display='block';
+      progressContainer.style.display='none';
+      feedbackBox.style.display='block';
 
-        const nextButtons=document.getElementById('next-buttons');
-        nextButtons.innerHTML='';
-        const nextNormal=document.createElement('button');
-        nextNormal.textContent='通常モードで次へ ▶';
-        nextNormal.className='secondary-btn';
-        nextNormal.onclick=()=>location.href='{{ url_for("word_quiz") }}';
-        nextButtons.appendChild(nextNormal);
-        {% if current_user and current_user.is_authenticated %}
-        const nextReview=document.createElement('button');
-        nextReview.textContent='苦手モードで次へ ▶';
-        nextReview.className='primary-btn';
-        nextReview.style.marginLeft='10px';
-        nextReview.onclick=()=>location.href='{{ url_for("word_quiz", review=1) }}';
-        nextButtons.appendChild(nextReview);
-        {% endif %}
-      },400);
-
-      // 平均スコア
-      document.getElementById('average-score').textContent=data.average_score ?? 0;
-
-      // あなたの回答
-      document.getElementById('user-answer').textContent=data.user_answer || answer || '（未回答）';
-
-      // 品詞と意味
-      const posMeaningBox=document.getElementById('pos-meaning-box');
-      posMeaningBox.innerHTML=`
-        <div class="card accent-blue"><div>📘 品詞</div><div>${data.pos || '（情報なし）'}</div></div>
-        <div class="card accent-green"><div>💡 意味</div><div>${data.simple_meaning || '（意味情報なし）'}</div></div>
-      `;
-
-      // スコア
-      const scoreEl=document.getElementById('score-text');
-      scoreEl.textContent=`${data.score ?? 0} 点`;
-      scoreEl.classList.add('score-animate');
-
-      // 例文（英語＋日本語訳）
-      const example=data.example_en || '';
-      const exampleJa=data.example_jp || '';
-      const exampleSent=document.getElementById('example-sentence');
-      const exampleTrans=document.getElementById('example-translation');
-      if(example){
-        exampleSent.innerHTML=example.split(/(?<=[.!?])\s+/).map(s=>s.trim()).filter(Boolean).join('<br>');
-        exampleTrans.textContent=exampleJa || '';
-      }else{
-        exampleSent.textContent='（例文なし）';
-        exampleTrans.textContent='';
-      }
-
-      // アドバイス
-      document.getElementById('feedback-text').innerHTML=(data.feedback||'').replace(/\n/g,'<br>');
+      // SPA形式で次の単語をセット
+      setTimeout(()=>loadNextWord(data), 1200);
 
     }catch(err){
       clearInterval(interval);
