@@ -189,6 +189,20 @@
       </a>
       {% endif %}
     </div>
+    <!-- 🔹 TOEICリーディングクイズ -->
+<div class="quiz-card">
+  <h2>TOEICリーディング問題</h2>
+  <p>TOEIC形式の英文読解に挑戦しよう！</p>
+  <a href="{{ url_for('toeic_reading', reading_id=1) }}">
+    <button class="primary-btn">TOEICリーディングに挑戦</button>
+  </a>
+  {% if not is_guest %}
+  <a href="{{ url_for('toeic_reading', reading_id=1, review=1) }}">
+    <button class="secondary-btn" style="margin-top:10px;">復習モード</button>
+  </a>
+  {% endif %}
+</div>
+
 
     <!-- ランキング -->
     <div class="nav-links">
