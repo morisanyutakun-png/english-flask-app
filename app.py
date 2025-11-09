@@ -949,7 +949,7 @@ def privacy():
     return render_template("privacy.html")
 
 # ===============================
-# toeicrのjemini 採点関数
+# TOEICリーディング Jemini 採点関数
 # ===============================
 def evaluate_toeic_r(passage, question, correct_answer, user_answer):
     if not user_answer:
@@ -991,7 +991,7 @@ def evaluate_toeic_r(passage, question, correct_answer, user_answer):
         return 50, "採点に失敗したため簡易スコアを返しました。"
 
 # ===============================
-# TOEICリーディング 問題表示 & 解答受付（安全版）
+# TOEICリーディング 問題表示 & 解答受付（文字列対応版）
 # ===============================
 @app.route("/toeic_r/<int:reading_id>", methods=["GET", "POST"])
 def toeic_reading(reading_id):
@@ -1005,9 +1005,9 @@ def toeic_reading(reading_id):
             return "問題が見つかりません", 404
 
         passage = row["text"] or ""
-        # JSON デコードせず、文字列をリストとして扱う
-        questions = row["questions"].split("\n") if row["questions"] else []
-        answers   = row["answers"].split("\n")   if row["answers"]   else []
+        # JSONではなく文字列を改行で分割してリスト化
+        questions = (row["questions"] or "").split("\n")
+        answers   = (row["answers"]   or "").split("\n")
 
         if not questions or not answers:
             return "問題が登録されていません", 404
@@ -1016,6 +1016,7 @@ def toeic_reading(reading_id):
         total_score = 0
 
         if request.method == "POST":
+            # フォームから送られた回答を取得
             user_answers = [request.form.get(f"q{i}") for i in range(len(questions))]
             for i, (q, correct, user) in enumerate(zip(questions, answers, user_answers)):
                 score, feedback = evaluate_toeic_r(passage, q, correct, user)
@@ -1028,15 +1029,22 @@ def toeic_reading(reading_id):
                 total_score += score
 
             avg_score = total_score / len(questions)
-            return render_template("toeic_r_result.html",
-                                   passage=passage,
-                                   feedbacks=feedbacks,
-                                   avg_score=avg_score)
+            return render_template(
+                "toeic_r_result.html",
+                passage=passage,
+                feedbacks=feedbacks,
+                avg_score=avg_score
+            )
 
-        return render_template("toeic_r.html", passage=passage, questions=questions)
+        # GET時は問題を表示
+        return render_template(
+            "toeic_r.html",
+            passage=passage,
+            questions=questions
+        )
 
     except Exception as e:
-        logger.error("TOEIC reading route error: %s", e)
+        logger.error("TOEIC reading route error: %s", e, exc_info=True)
         return "サーバーエラーが発生しました", 500
 
 
