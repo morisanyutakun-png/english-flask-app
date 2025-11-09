@@ -1005,12 +1005,9 @@ def toeic_reading(reading_id):
             return "問題が見つかりません", 404
 
         passage = row["text"] or ""
-        # JSON デコードを安全に
-        try:
-            questions = json.loads(row["questions"]) if row["questions"] else []
-            answers   = json.loads(row["answers"])   if row["answers"]   else []
-        except json.JSONDecodeError:
-            return "問題データが壊れています", 500
+        # JSON ではなく文字列としてそのまま取得
+        questions = [row["questions"]] if row["questions"] else []
+        answers   = [row["answers"]]   if row["answers"]   else []
 
         if not questions or not answers:
             return "問題が登録されていません", 404
@@ -1043,6 +1040,7 @@ def toeic_reading(reading_id):
     except Exception as e:
         logger.error("TOEIC reading route error: %s", e)
         return "サーバーエラーが発生しました", 500
+
 
 # ======================================================
 # ローカル実行
