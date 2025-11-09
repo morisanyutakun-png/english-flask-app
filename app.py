@@ -1005,9 +1005,9 @@ def toeic_reading(reading_id):
             return "問題が見つかりません", 404
 
         passage = row["text"] or ""
-        # JSON ではなく文字列としてそのまま取得
-        questions = [row["questions"]] if row["questions"] else []
-        answers   = [row["answers"]]   if row["answers"]   else []
+        # JSON デコードせず、文字列をリストとして扱う
+        questions = row["questions"].split("\n") if row["questions"] else []
+        answers   = row["answers"].split("\n")   if row["answers"]   else []
 
         if not questions or not answers:
             return "問題が登録されていません", 404
@@ -1028,12 +1028,10 @@ def toeic_reading(reading_id):
                 total_score += score
 
             avg_score = total_score / len(questions)
-            return render_template(
-                "toeic_r_result.html",
-                passage=passage,
-                feedbacks=feedbacks,
-                avg_score=avg_score
-            )
+            return render_template("toeic_r_result.html",
+                                   passage=passage,
+                                   feedbacks=feedbacks,
+                                   avg_score=avg_score)
 
         return render_template("toeic_r.html", passage=passage, questions=questions)
 
