@@ -991,40 +991,58 @@ def evaluate_toeic_r(passage, question, correct_answer, user_answer):
         return 50, "採点に失敗したため簡易スコアを返しました。"
 
 # ===============================
-# TOEICリーディング 問題表示 & 解答受付
+# TOEICリーディング 問題表示 & 解答受付（安全版）
 # ===============================
 @app.route("/toeic_r/<int:reading_id>", methods=["GET", "POST"])
 def toeic_reading(reading_id):
-    db = sqlite3.connect(TOEIC_READING_DB)
-    db.row_factory = sqlite3.Row
-    cur = db.execute("SELECT * FROM reading WHERE id=?", (reading_id,))
-    row = cur.fetchone()
-    if not row:
-        return "問題が見つかりません", 404
+    try:
+        db = sqlite3.connect(TOEIC_READING_DB)
+        db.row_factory = sqlite3.Row
+        cur = db.execute("SELECT * FROM reading WHERE id=?", (reading_id,))
+        row = cur.fetchone()
 
-    passage = row["text"]
-    questions = json.loads(row["questions"])  # 複数問題を想定
-    answers = json.loads(row["answers"])      # 正答も複数対応
+        if not row:
+            return "問題が見つかりません", 404
 
-    feedbacks = []
-    total_score = 0
+        passage = row["text"] or ""
+        # JSON デコードを安全に
+        try:
+            questions = json.loads(row["questions"]) if row["questions"] else []
+            answers   = json.loads(row["answers"])   if row["answers"]   else []
+        except json.JSONDecodeError:
+            return "問題データが壊れています", 500
 
-    if request.method == "POST":
-        user_answers = [request.form.get(f"q{i}") for i in range(len(questions))]
-        for i, (q, correct, user) in enumerate(zip(questions, answers, user_answers)):
-            score, feedback = evaluate_toeic_r(passage, q, correct, user)
-            feedbacks.append({
-                "question": q,
-                "user_answer": user,
-                "score": score,
-                "feedback": feedback
-            })
-            total_score += score
-        avg_score = total_score / len(questions)
-        return render_template("toeic_r_result.html", passage=passage,
-                               feedbacks=feedbacks, avg_score=avg_score)
+        if not questions or not answers:
+            return "問題が登録されていません", 404
 
-    return render_template("toeic_r.html", passage=passage, questions=questions)
+        feedbacks = []
+        total_score = 0
+
+        if request.method == "POST":
+            user_answers = [request.form.get(f"q{i}") for i in range(len(questions))]
+            for i, (q, correct, user) in enumerate(zip(questions, answers, user_answers)):
+                score, feedback = evaluate_toeic_r(passage, q, correct, user)
+                feedbacks.append({
+                    "question": q,
+                    "user_answer": user,
+                    "score": score,
+                    "feedback": feedback
+                })
+                total_score += score
+
+            avg_score = total_score / len(questions)
+            return render_template(
+                "toeic_r_result.html",
+                passage=passage,
+                feedbacks=feedbacks,
+                avg_score=avg_score
+            )
+
+        return render_template("toeic_r.html", passage=passage, questions=questions)
+
+    except Exception as e:
+        logger.error("TOEIC reading route error: %s", e)
+        return "サーバーエラーが発生しました", 500
 
 # ======================================================
 # ローカル実行
